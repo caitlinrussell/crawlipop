@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Crawlipop</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="orb orb-1" aria-hidden="true"></div>
+    <div class="orb orb-2" aria-hidden="true"></div>
+    <div class="orb orb-3" aria-hidden="true"></div>
+
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-block">
+          <div class="brand-mark" aria-hidden="true">
+            <img class="brand-avatar" src="/crawlipop-avatar.png" alt="" />
+          </div>
+          <div>
+            <p class="brand-name">Crawlipop</p>
+            <p class="brand-meta">Your friendly SEO dashboard with Search Console insights & Linear handoff</p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <label class="team-picker">
+            <span>Linear team</span>
+            <select id="teamSelect">
+              <option value="">Select a team</option>
+            </select>
+          </label>
+          <button id="syncButton" class="primary-button" type="button">Sync Search Console</button>
+        </div>
+      </header>
+
+      <main class="dashboard">
+        <section class="panel briefing-panel">
+          <div class="briefing-head">
+            <div class="briefing-copy">
+              <h1 id="deskTitle">SEO desk</h1>
+              <p id="overviewMeta">Loading dashboard...</p>
+              <p id="focusPrompt" class="focus-prompt">Pulling the current state...</p>
+            </div>
+          </div>
+          <div class="overview-grid" id="summaryGrid"></div>
+          <div class="trend-card">
+            <div class="trend-head">
+              <div>
+                <h2><span class="section-icon" aria-hidden="true"></span> Clicks over time</h2>
+                <p id="trendMeta">Latest 28-day snapshot</p>
+              </div>
+            </div>
+            <div id="trendChart" class="trend-chart"></div>
+          </div>
+        </section>
+
+        <section class="panel queue-panel">
+          <div class="panel-head">
+            <div>
+              <h2><span class="section-icon" aria-hidden="true"></span> Suggestion queue</h2>
+              <p id="queueMeta">Each item opens on the right so the ticket action stays focused.</p>
+            </div>
+            <div id="queuePills" class="queue-pills"></div>
+          </div>
+          <div class="queue-layout">
+            <div id="suggestionsList" class="suggestion-list"></div>
+            <article id="suggestionDetail" class="detail-card"></article>
+          </div>
+        </section>
+
+        <section class="panel table-panel">
+          <div class="panel-head">
+            <div>
+              <h2><span class="section-icon" aria-hidden="true"></span> Top queries</h2>
+              <p>Strongest current rows, sorted for quick scanning.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Query</th>
+                  <th>Clicks</th>
+                  <th>CTR</th>
+                  <th>Pos.</th>
+                  <th>Delta</th>
+                </tr>
+              </thead>
+              <tbody id="queriesTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel table-panel">
+          <div class="panel-head">
+            <div>
+              <h2><span class="section-icon" aria-hidden="true"></span> Top pages</h2>
+              <p>Pages with enough signal to protect, refresh, or expand.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Page</th>
+                  <th>Clicks</th>
+                  <th>CTR</th>
+                  <th>Pos.</th>
+                  <th>Delta</th>
+                </tr>
+              </thead>
+              <tbody id="pagesTable"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/vendor/chart.js/chart.umd.js"></script>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

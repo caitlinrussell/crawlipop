@@ -1,0 +1,8 @@
+node_modules
+.env
+.data
+npm-debug.log*
+ember-gsc.json
+crawlipop-gsc.json
+.DS_Store
+/*.png
