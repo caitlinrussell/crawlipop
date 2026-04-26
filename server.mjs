@@ -101,7 +101,7 @@ function renderLoginPage({ authErrors, errorCode, next }) {
       <section class="login-card">
         <div class="login-brand">
           <div class="brand-mark" aria-hidden="true">
-            <img class="brand-avatar" src="/crawlipop-avatar.png" alt="" />
+            <img class="brand-avatar" src="/crawlipop-avatar-2.png" alt="" />
           </div>
           <div>
             <p class="brand-name">Crawlipop</p>
@@ -430,6 +430,10 @@ app.get("/styles.css", (_request, response) => {
 
 app.get("/crawlipop-avatar.png", (_request, response) => {
   response.sendFile(path.join(__dirname, "public", "crawlipop-avatar.png"));
+});
+
+app.get("/crawlipop-avatar-2.png", (_request, response) => {
+  response.sendFile(path.join(__dirname, "public", "crawlipop-avatar-2.png"));
 });
 
 app.get("/login", async (request, response) => {
