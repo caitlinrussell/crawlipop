@@ -5,6 +5,8 @@ const state = {
   selectedTeamId: localStorage.getItem("crawlipop:selected-team") ?? "",
   selectedSuggestionId: null,
   selectedBehaviorSuggestionId: null,
+  suggestionPage: 0,
+  behaviorSuggestionPage: 0,
   selectedTrendIndex: null,
   loadingDashboard: true,
   syncing: false,
@@ -29,21 +31,30 @@ const elements = {
   summaryGrid: document.querySelector("#summaryGrid"),
   trendMeta: document.querySelector("#trendMeta"),
   trendChart: document.querySelector("#trendChart"),
+  activityMeta: document.querySelector("#activityMeta"),
+  activityChart: document.querySelector("#activityChart"),
   queueMeta: document.querySelector("#queueMeta"),
   queuePills: document.querySelector("#queuePills"),
   suggestionsList: document.querySelector("#suggestionsList"),
+  suggestionPagination: document.querySelector("#suggestionPagination"),
   suggestionDetail: document.querySelector("#suggestionDetail"),
   behaviorMeta: document.querySelector("#behaviorMeta"),
   behaviorPills: document.querySelector("#behaviorPills"),
   behaviorSyncButton: document.querySelector("#behaviorSyncButton"),
   behaviorSummary: document.querySelector("#behaviorSummary"),
   behaviorList: document.querySelector("#behaviorList"),
+  behaviorPagination: document.querySelector("#behaviorPagination"),
   behaviorDetail: document.querySelector("#behaviorDetail"),
+  behaviorTableMeta: document.querySelector("#behaviorTableMeta"),
+  behaviorTable: document.querySelector("#behaviorTable"),
   queriesTable: document.querySelector("#queriesTable"),
   pagesTable: document.querySelector("#pagesTable")
 };
 
+const SUGGESTIONS_PER_PAGE = 4;
+
 let trendChart = null;
+let activityChart = null;
 let behaviorPollTimer = null;
 
 async function requestJson(url, options = {}) {
@@ -189,6 +200,48 @@ function formatConfidence(value) {
   }
 
   return `${Math.round(value * 100)}%`;
+}
+
+function pageCount(total = 0) {
+  return Math.max(1, Math.ceil(total / SUGGESTIONS_PER_PAGE));
+}
+
+function clampPage(page, items = []) {
+  return Math.min(Math.max(page, 0), pageCount(items.length) - 1);
+}
+
+function pageItems(items = [], page = 0) {
+  const start = page * SUGGESTIONS_PER_PAGE;
+  return items.slice(start, start + SUGGESTIONS_PER_PAGE);
+}
+
+function renderPager({ container, page, total, onPageChange }) {
+  if (!container || total <= SUGGESTIONS_PER_PAGE) {
+    container?.replaceChildren();
+    return;
+  }
+
+  const totalPages = pageCount(total);
+  const start = page * SUGGESTIONS_PER_PAGE + 1;
+  const end = Math.min(total, start + SUGGESTIONS_PER_PAGE - 1);
+
+  container.replaceChildren();
+  container.className = "queue-pagination";
+  container.innerHTML = `
+    <span>${start}-${end} of ${total}</span>
+    <div class="pagination-actions">
+      <button class="secondary-button pagination-button" type="button" data-page-action="previous" ${page === 0 ? "disabled" : ""}>Previous</button>
+      <button class="secondary-button pagination-button" type="button" data-page-action="next" ${page >= totalPages - 1 ? "disabled" : ""}>Next</button>
+    </div>
+  `;
+
+  container.querySelector('[data-page-action="previous"]')?.addEventListener("click", () => {
+    onPageChange(page - 1);
+  });
+
+  container.querySelector('[data-page-action="next"]')?.addEventListener("click", () => {
+    onPageChange(page + 1);
+  });
 }
 
 function getDismissedStorageKey(siteUrl = state.dashboard?.siteUrl) {
@@ -403,10 +456,13 @@ function renderLoadingDashboard() {
   elements.overviewMeta.textContent = "Fetching the latest Search Console snapshot...";
   elements.focusPrompt.textContent = "Loading your queries, pages, and recommendations.";
   elements.trendMeta.textContent = "Waiting for trend data";
+  elements.activityMeta.textContent = "Waiting for behavior data";
   elements.queueMeta.textContent = "Building the latest suggestion queue.";
   elements.queuePills.replaceChildren();
+  elements.suggestionPagination.replaceChildren();
   elements.behaviorMeta.textContent = "Checking PostHog behavior analysis.";
   elements.behaviorPills.replaceChildren();
+  elements.behaviorPagination.replaceChildren();
   elements.behaviorSummary.replaceChildren();
 
   elements.summaryGrid.innerHTML = `
@@ -431,6 +487,12 @@ function renderLoadingDashboard() {
   elements.trendChart.innerHTML = `
     <div class="widget-loading-block">
       ${renderSpinner("Loading trend data")}
+    </div>
+  `;
+
+  elements.activityChart.innerHTML = `
+    <div class="widget-loading-block">
+      ${renderSpinner("Loading user activity")}
     </div>
   `;
 
@@ -478,6 +540,16 @@ function renderLoadingDashboard() {
       <td colspan="5">
         <div class="table-loading">
           ${renderSpinner("Loading pages")}
+        </div>
+      </td>
+    </tr>
+  `;
+
+  elements.behaviorTable.innerHTML = `
+    <tr>
+      <td colspan="5">
+        <div class="table-loading">
+          ${renderSpinner("Loading user behaviors")}
         </div>
       </td>
     </tr>
@@ -672,6 +744,138 @@ function renderTrend(trend = []) {
   });
 }
 
+function renderActivityChart(activityTrend = []) {
+  if (activityChart) {
+    activityChart.destroy();
+    activityChart = null;
+  }
+
+  if (!activityTrend.length) {
+    elements.activityChart.innerHTML = `<div class="empty-state">No behavior activity yet.</div>`;
+    return;
+  }
+
+  elements.activityChart.innerHTML = `
+    <div class="trend-chart-shell">
+      <p class="trend-chart-note">Daily PostHog activity, active users, conversions, and friction signals.</p>
+      <canvas id="activityCanvas" aria-label="User activity over time"></canvas>
+    </div>
+  `;
+
+  if (typeof window.Chart !== "function") {
+    elements.activityChart.innerHTML = `<div class="empty-state">Chart library failed to load.</div>`;
+    return;
+  }
+
+  const canvas = elements.activityChart.querySelector("#activityCanvas");
+  activityChart = new window.Chart(canvas, {
+    type: "line",
+    data: {
+      labels: activityTrend.map((entry) => formatShortDate(entry.date)),
+      datasets: [
+        {
+          label: "Events",
+          data: activityTrend.map((entry) => entry.events),
+          borderColor: "#b180ff",
+          backgroundColor: "rgba(177, 128, 255, 0.18)",
+          tension: 0.32,
+          borderWidth: 3,
+          pointRadius: 0,
+          pointHoverRadius: 5
+        },
+        {
+          label: "Users",
+          data: activityTrend.map((entry) => entry.users),
+          borderColor: "#37e8c8",
+          backgroundColor: "rgba(55, 232, 200, 0.16)",
+          tension: 0.32,
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 5
+        },
+        {
+          label: "Conversions",
+          data: activityTrend.map((entry) => entry.conversions),
+          borderColor: "#ffd84d",
+          backgroundColor: "rgba(255, 216, 77, 0.14)",
+          tension: 0.32,
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 5
+        },
+        {
+          label: "Friction",
+          data: activityTrend.map((entry) => entry.friction),
+          borderColor: "#ff7b7b",
+          backgroundColor: "rgba(255, 123, 123, 0.14)",
+          tension: 0.32,
+          borderWidth: 2,
+          borderDash: [6, 5],
+          pointRadius: 0,
+          pointHoverRadius: 5
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: "index",
+        intersect: false
+      },
+      animation: {
+        duration: 220
+      },
+      plugins: {
+        legend: {
+          labels: {
+            color: "#f0eaff",
+            usePointStyle: true,
+            boxWidth: 8,
+            padding: 16
+          }
+        },
+        tooltip: {
+          backgroundColor: "rgba(10, 8, 26, 0.96)",
+          borderColor: "rgba(255, 255, 255, 0.12)",
+          borderWidth: 1,
+          titleColor: "#f0eaff",
+          bodyColor: "#f0eaff",
+          callbacks: {
+            title(items) {
+              return formatShortDate(activityTrend[items[0].dataIndex].date);
+            },
+            label(context) {
+              return `${context.dataset.label}: ${compactNumber(context.parsed.y)}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: {
+            color: "rgba(255, 255, 255, 0.05)"
+          },
+          ticks: {
+            color: "rgba(224, 210, 255, 0.68)",
+            maxTicksLimit: 7
+          }
+        },
+        y: {
+          beginAtZero: true,
+          grid: {
+            color: "rgba(255, 255, 255, 0.07)"
+          },
+          ticks: {
+            color: "rgba(224, 210, 255, 0.68)",
+            precision: 0
+          }
+        }
+      }
+    }
+  });
+}
+
 function renderQueuePills(recommendations = [], dismissedCount = 0) {
   elements.queuePills.replaceChildren();
 
@@ -702,10 +906,13 @@ function renderQueuePills(recommendations = [], dismissedCount = 0) {
 
 function renderSuggestions(recommendations = [], linearConfigured, dismissedCount = 0) {
   const queuedRecommendations = sortSuggestions(recommendations);
+  state.suggestionPage = clampPage(state.suggestionPage, queuedRecommendations);
+  const visiblePageRecommendations = pageItems(queuedRecommendations, state.suggestionPage);
   elements.suggestionsList.replaceChildren();
-  const selectedSuggestion = getSelectedSuggestion(queuedRecommendations);
+  const selectedSuggestion = getSelectedSuggestion(visiblePageRecommendations);
 
   if (!queuedRecommendations.length) {
+    elements.suggestionPagination.replaceChildren();
     elements.suggestionsList.innerHTML = `<div class="empty-state">${
       dismissedCount
         ? "Everything in this window is dismissed for now. Use the queue toggle to bring items back."
@@ -716,7 +923,18 @@ function renderSuggestions(recommendations = [], linearConfigured, dismissedCoun
     return;
   }
 
-  for (const recommendation of queuedRecommendations) {
+  renderPager({
+    container: elements.suggestionPagination,
+    page: state.suggestionPage,
+    total: queuedRecommendations.length,
+    onPageChange(page) {
+      state.suggestionPage = clampPage(page, queuedRecommendations);
+      state.selectedSuggestionId = null;
+      renderDashboard();
+    }
+  });
+
+  for (const recommendation of visiblePageRecommendations) {
     const dismissed = isDismissedSuggestion(recommendation.id);
     const item = document.createElement("button");
     item.type = "button";
@@ -961,10 +1179,13 @@ function renderBehaviorPills(suggestions = [], dismissedCount = 0) {
 function renderBehaviorQueue(behaviorAnalysis = {}, linearConfigured) {
   const visibleSuggestions = getVisibleBehaviorSuggestions(behaviorAnalysis.suggestions ?? []);
   const suggestions = sortBehaviorSuggestions(visibleSuggestions);
-  const selectedSuggestion = getSelectedBehaviorSuggestion(suggestions);
+  state.behaviorSuggestionPage = clampPage(state.behaviorSuggestionPage, suggestions);
+  const visiblePageSuggestions = pageItems(suggestions, state.behaviorSuggestionPage);
+  const selectedSuggestion = getSelectedBehaviorSuggestion(visiblePageSuggestions);
   elements.behaviorList.replaceChildren();
 
   if (!behaviorAnalysis.configured) {
+    elements.behaviorPagination.replaceChildren();
     elements.behaviorList.innerHTML = `<div class="empty-state">Add PostHog credentials to analyze Pawprint Kitchen behavior.</div>`;
     elements.behaviorDetail.className = "detail-card empty";
     elements.behaviorDetail.innerHTML = `<div>PostHog is not connected yet.</div>`;
@@ -972,6 +1193,7 @@ function renderBehaviorQueue(behaviorAnalysis = {}, linearConfigured) {
   }
 
   if (behaviorAnalysis.status === "running") {
+    elements.behaviorPagination.replaceChildren();
     elements.behaviorList.innerHTML = `
       <div class="suggestion-item loading-card loading-suggestion">
         ${renderSpinner("Analyzing behavior")}
@@ -980,6 +1202,7 @@ function renderBehaviorQueue(behaviorAnalysis = {}, linearConfigured) {
   }
 
   if (behaviorAnalysis.status === "error") {
+    elements.behaviorPagination.replaceChildren();
     elements.behaviorList.innerHTML = `<div class="empty-state">Behavior analysis failed: ${escapeHtml(behaviorAnalysis.error ?? behaviorAnalysis.message)}</div>`;
     elements.behaviorDetail.className = "detail-card empty";
     elements.behaviorDetail.innerHTML = `<div>Fix the PostHog configuration or try again.</div>`;
@@ -987,6 +1210,7 @@ function renderBehaviorQueue(behaviorAnalysis = {}, linearConfigured) {
   }
 
   if (!suggestions.length && behaviorAnalysis.status !== "running") {
+    elements.behaviorPagination.replaceChildren();
     elements.behaviorList.innerHTML = `<div class="empty-state">${
       (behaviorAnalysis.suggestions ?? []).some((entry) => isDismissedBehaviorSuggestion(entry.id))
         ? "Everything in this behavior window is dismissed for now."
@@ -997,9 +1221,20 @@ function renderBehaviorQueue(behaviorAnalysis = {}, linearConfigured) {
     return;
   }
 
-  if (suggestions.length) {
-    const productSuggestions = suggestions.filter((entry) => entry.kind !== "instrumentation");
-    const instrumentationSuggestions = suggestions.filter((entry) => entry.kind === "instrumentation");
+  if (visiblePageSuggestions.length) {
+    renderPager({
+      container: elements.behaviorPagination,
+      page: state.behaviorSuggestionPage,
+      total: suggestions.length,
+      onPageChange(page) {
+        state.behaviorSuggestionPage = clampPage(page, suggestions);
+        state.selectedBehaviorSuggestionId = null;
+        renderDashboard();
+      }
+    });
+
+    const productSuggestions = visiblePageSuggestions.filter((entry) => entry.kind !== "instrumentation");
+    const instrumentationSuggestions = visiblePageSuggestions.filter((entry) => entry.kind === "instrumentation");
     renderBehaviorSuggestionGroup(productSuggestions, "Product issues", selectedSuggestion, linearConfigured);
     renderBehaviorSuggestionGroup(instrumentationSuggestions, "Instrumentation", selectedSuggestion, linearConfigured);
   }
@@ -1283,6 +1518,48 @@ function renderTable(target, rows, type) {
   });
 }
 
+function renderBehaviorTable(rows = []) {
+  elements.behaviorTable.replaceChildren();
+
+  const visibleRows = rows
+    .filter((row) => row.events > 0 || ["Conversion", "Friction"].includes(row.kind))
+    .sort((left, right) => {
+      const kindOrder = { Friction: 0, Conversion: 1, Intent: 2, Setup: 3 };
+      const leftKind = kindOrder[left.kind] ?? 9;
+      const rightKind = kindOrder[right.kind] ?? 9;
+
+      if (leftKind !== rightKind) {
+        return leftKind - rightKind;
+      }
+
+      return right.events - left.events;
+    });
+
+  if (!visibleRows.length) {
+    const row = document.createElement("tr");
+    row.innerHTML = `<td colspan="5">No behavior data yet.</td>`;
+    elements.behaviorTable.append(row);
+    return;
+  }
+
+  for (const entry of visibleRows) {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>
+        <div class="table-key">
+          <span class="behavior-kind-mark" data-kind="${escapeHtml(entry.kind)}"></span>
+          <span class="query-key">${escapeHtml(entry.label)}</span>
+        </div>
+      </td>
+      <td>${escapeHtml(entry.kind)}</td>
+      <td>${compactNumber(entry.events)}</td>
+      <td>${compactNumber(entry.users)}</td>
+      <td>${compactNumber(entry.sessions)}</td>
+    `;
+    elements.behaviorTable.append(row);
+  }
+}
+
 function renderDashboard() {
   const dashboard = state.dashboard;
   if (!dashboard) {
@@ -1342,9 +1619,16 @@ function renderDashboard() {
   elements.behaviorSyncButton.disabled = state.analyzingBehavior || behaviorStatus === "running" || !behaviorAnalysis.configured;
   elements.behaviorSyncButton.textContent =
     state.analyzingBehavior || behaviorStatus === "running" ? "Analyzing..." : "Analyze behavior";
+  elements.activityMeta.textContent = behaviorWindow?.start && behaviorWindow?.end
+    ? `${formatShortDate(behaviorWindow.start)} to ${formatShortDate(behaviorWindow.end)}`
+    : "Latest behavior analysis window";
+  elements.behaviorTableMeta.textContent = behaviorAnalysis.summary?.behaviorRows?.length
+    ? `${compactNumber(behaviorAnalysis.summary.eventsAnalyzed)} events across ${compactNumber(behaviorAnalysis.summary.usersAnalyzed)} users.`
+    : "Signup, recipe, premium, and friction signals from PostHog.";
 
   renderSummary(dashboard.summary);
   renderTrend(dashboard.trend);
+  renderActivityChart(behaviorAnalysis.summary?.activityTrend ?? []);
   renderQueuePills(visibleRecommendations, dismissedCount);
   renderSuggestions(visibleRecommendations, dashboard.connection?.linear?.configured, dismissedCount);
   renderBehaviorSummary(behaviorAnalysis);
@@ -1352,6 +1636,7 @@ function renderDashboard() {
   renderBehaviorQueue(behaviorAnalysis, dashboard.connection?.linear?.configured);
   renderTable(elements.queriesTable, dashboard.topQueries, "query");
   renderTable(elements.pagesTable, dashboard.topPages, "page");
+  renderBehaviorTable(behaviorAnalysis.summary?.behaviorRows ?? []);
   setWidgetLoading(state.syncing);
 }
 

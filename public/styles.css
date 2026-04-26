@@ -242,6 +242,8 @@ a {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex: 0 0 auto;
+  min-width: 276px;
   padding: 10px 14px;
   border: 1px solid var(--glass-border);
   border-radius: 16px;
@@ -251,6 +253,8 @@ a {
 .auth-copy {
   display: grid;
   gap: 2px;
+  min-width: 0;
+  flex: 1;
 }
 
 .auth-label {
@@ -259,11 +263,17 @@ a {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 #authEmail {
+  display: block;
+  min-width: 0;
   font-size: 0.92rem;
   font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .auth-form {
@@ -271,8 +281,10 @@ a {
 }
 
 .auth-button {
+  min-width: 94px;
   height: 38px;
   padding: 0 14px;
+  white-space: nowrap;
 }
 
 .team-picker {
@@ -433,6 +445,10 @@ select:disabled {
 
 .table-panel {
   min-width: 0;
+}
+
+.behavior-table-panel {
+  grid-column: 1 / -1;
 }
 
 .briefing-head,
@@ -693,6 +709,10 @@ select:disabled {
   padding: 0 24px 24px;
 }
 
+.activity-card {
+  padding-top: 0;
+}
+
 .trend-head {
   display: flex;
   align-items: flex-start;
@@ -819,6 +839,10 @@ select:disabled {
   display: block;
   width: 100%;
   height: 176px !important;
+}
+
+.activity-chart canvas {
+  height: 164px !important;
 }
 
 /* ---- Connections ---- */
@@ -964,6 +988,33 @@ select:disabled {
   grid-template-columns: minmax(280px, 0.72fr) minmax(0, 1fr);
   gap: 16px;
   padding: 20px 24px 24px;
+}
+
+.queue-column {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.queue-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 40px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.pagination-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.pagination-button {
+  height: 36px;
+  padding: 0 12px;
 }
 
 .behavior-summary {
@@ -1413,6 +1464,30 @@ td:first-child {
   font-weight: 700;
 }
 
+.behavior-kind-mark {
+  width: 10px;
+  height: 10px;
+  margin-top: 0.38rem;
+  border-radius: 999px;
+  background: var(--muted);
+}
+
+.behavior-kind-mark[data-kind="Friction"] {
+  background: var(--coral);
+}
+
+.behavior-kind-mark[data-kind="Conversion"] {
+  background: var(--teal);
+}
+
+.behavior-kind-mark[data-kind="Intent"] {
+  background: var(--purple);
+}
+
+.behavior-kind-mark[data-kind="Setup"] {
+  background: var(--blue);
+}
+
 .query-key,
 .page-key {
   display: block;
@@ -1439,6 +1514,16 @@ td:nth-child(4) {
 th:nth-child(5),
 td:nth-child(5) {
   width: 16%;
+}
+
+.behavior-table th:first-child,
+.behavior-table td:first-child {
+  width: 42%;
+}
+
+.behavior-table th:not(:first-child),
+.behavior-table td:not(:first-child) {
+  width: 14.5%;
 }
 
 .delta-chip {
