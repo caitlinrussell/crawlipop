@@ -161,6 +161,8 @@ function escapeHtml(value) {
 function describeKind(kind) {
   const labels = {
     ctr: "Snippet",
+    pageCtr: "Page snippet",
+    emerging: "Early visibility",
     refresh: "Refresh",
     expansion: "Expansion",
     momentum: "Momentum"
