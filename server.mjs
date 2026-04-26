@@ -200,9 +200,18 @@ function createBehaviorAnalysisState(behaviorAnalysis = {}) {
   };
 }
 
+function hasBehaviorAnalysisInsights(behaviorAnalysis) {
+  const summary = behaviorAnalysis?.summary;
+  return Array.isArray(summary?.activityTrend) && Array.isArray(summary?.behaviorRows);
+}
+
 function isBehaviorAnalysisExpired(behaviorAnalysis) {
   if (!hasPostHogConfig(config)) {
     return false;
+  }
+
+  if (!hasBehaviorAnalysisInsights(behaviorAnalysis)) {
+    return true;
   }
 
   if (!behaviorAnalysis?.lastAnalyzedAt) {
