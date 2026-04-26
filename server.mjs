@@ -200,12 +200,8 @@ function createBehaviorAnalysisState(behaviorAnalysis = {}) {
   };
 }
 
-function isBehaviorAnalysisStale(behaviorAnalysis) {
+function isBehaviorAnalysisExpired(behaviorAnalysis) {
   if (!hasPostHogConfig(config)) {
-    return false;
-  }
-
-  if (behaviorAnalysisInFlight) {
     return false;
   }
 
@@ -220,6 +216,10 @@ function isBehaviorAnalysisStale(behaviorAnalysis) {
 
   const maxAgeMs = Math.max(1, config.posthogAnalysisMaxAgeHours) * 60 * 60 * 1000;
   return Date.now() - lastAnalyzedAt > maxAgeMs;
+}
+
+function isBehaviorAnalysisStale(behaviorAnalysis) {
+  return !behaviorAnalysisInFlight && isBehaviorAnalysisExpired(behaviorAnalysis);
 }
 
 async function initializeDashboard() {
@@ -311,7 +311,7 @@ async function syncBehaviorAnalysis({ force = false } = {}) {
       return nextState.behaviorAnalysis;
     }
 
-    if (!force && !isBehaviorAnalysisStale(currentBehavior)) {
+    if (!force && !isBehaviorAnalysisExpired(currentBehavior)) {
       return currentBehavior;
     }
 
