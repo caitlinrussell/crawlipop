@@ -6,13 +6,14 @@
   "scripts": {
     "dev": "node --watch server.mjs",
     "start": "node server.mjs",
-    "check": "node --check server.mjs && node --check lib/config.mjs && node --check lib/data-store.mjs && node --check lib/demo-data.mjs && node --check lib/google-search-console.mjs && node --check lib/linear.mjs && node --check lib/recommendations.mjs && node --check public/app.js"
+    "check": "node --check server.mjs && node --check lib/auth.mjs && node --check lib/config.mjs && node --check lib/data-store.mjs && node --check lib/demo-data.mjs && node --check lib/google-search-console.mjs && node --check lib/linear.mjs && node --check lib/recommendations.mjs && node --check public/app.js"
   },
   "dependencies": {
     "chart.js": "^4.5.1",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "google-auth-library": "^10.4.1",
+    "jose": "^6.1.0",
     "node-cron": "^4.2.1"
   }
 }

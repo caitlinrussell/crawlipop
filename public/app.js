@@ -1,5 +1,6 @@
 const state = {
   dashboard: null,
+  session: null,
   teams: [],
   selectedTeamId: localStorage.getItem("crawlipop:selected-team") ?? "",
   selectedSuggestionId: null,
@@ -13,6 +14,7 @@ const state = {
 };
 
 const elements = {
+  authEmail: document.querySelector("#authEmail"),
   syncButton: document.querySelector("#syncButton"),
   teamSelect: document.querySelector("#teamSelect"),
   deskTitle: document.querySelector("#deskTitle"),
@@ -30,6 +32,22 @@ const elements = {
 };
 
 let trendChart = null;
+
+async function requestJson(url, options = {}) {
+  const response = await fetch(url, {
+    cache: "no-store",
+    ...options
+  });
+
+  if (response.status === 401) {
+    const next = `${window.location.pathname}${window.location.search}`;
+    window.location.assign(`/login?next=${encodeURIComponent(next)}`);
+    throw new Error("Unauthorized");
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  return { payload, response };
+}
 
 function compactNumber(value) {
   return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value ?? 0);
@@ -264,6 +282,10 @@ function setWidgetLoading(active) {
 }
 
 function renderLoadingDashboard() {
+  if (elements.authEmail) {
+    elements.authEmail.textContent = "Loading...";
+  }
+
   elements.deskTitle.textContent = "SEO desk";
   elements.overviewMeta.textContent = "Fetching the latest Search Console snapshot...";
   elements.focusPrompt.textContent = "Loading your queries, pages, and recommendations.";
@@ -331,6 +353,14 @@ function renderLoadingDashboard() {
       </td>
     </tr>
   `;
+}
+
+function renderSession() {
+  if (!elements.authEmail) {
+    return;
+  }
+
+  elements.authEmail.textContent = state.session?.email ?? "Signed in";
 }
 
 function renderSummary(summary) {
@@ -714,7 +744,7 @@ async function createLinearIssue(suggestionId) {
   renderDashboard();
 
   try {
-    const response = await fetch("/api/linear/issues", {
+    const { payload, response } = await requestJson("/api/linear/issues", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -724,8 +754,6 @@ async function createLinearIssue(suggestionId) {
         teamId: state.selectedTeamId
       })
     });
-
-    const payload = await response.json();
 
     if (!response.ok) {
       throw new Error(payload.error ?? "Unable to create issue.");
@@ -868,17 +896,22 @@ function renderTeamOptions(teamsResponse) {
 }
 
 async function fetchDashboard() {
-  const response = await fetch("/api/dashboard", { cache: "no-store" });
-  state.dashboard = await response.json();
+  const { payload } = await requestJson("/api/dashboard");
+  state.dashboard = payload;
   state.loadingDashboard = false;
   renderDashboard();
 }
 
 async function fetchTeams() {
-  const response = await fetch("/api/linear/teams", { cache: "no-store" });
-  const payload = await response.json();
+  const { payload } = await requestJson("/api/linear/teams");
   renderTeamOptions(payload);
   renderDashboard();
+}
+
+async function fetchSession() {
+  const { payload } = await requestJson("/api/auth/session");
+  state.session = payload.session;
+  renderSession();
 }
 
 async function syncDashboard() {
@@ -888,10 +921,9 @@ async function syncDashboard() {
   renderDashboard();
 
   try {
-    const response = await fetch("/api/sync", {
+    const { payload, response } = await requestJson("/api/sync", {
       method: "POST"
     });
-    const payload = await response.json();
 
     if (!response.ok) {
       state.dashboard = payload.dashboard;
@@ -921,4 +953,4 @@ elements.teamSelect.addEventListener("change", (event) => {
 });
 
 renderLoadingDashboard();
-await Promise.all([fetchDashboard(), fetchTeams()]);
+await Promise.all([fetchSession(), fetchDashboard(), fetchTeams()]);

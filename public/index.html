@@ -29,6 +29,15 @@
           </div>
         </div>
         <div class="header-actions">
+          <div class="auth-panel">
+            <div class="auth-copy">
+              <span class="auth-label">Signed in as</span>
+              <strong id="authEmail">Loading...</strong>
+            </div>
+            <form action="/api/auth/logout" method="post" class="auth-form">
+              <button class="secondary-button auth-button" type="submit">Sign out</button>
+            </form>
+          </div>
           <label class="team-picker">
             <span>Linear team</span>
             <select id="teamSelect">
