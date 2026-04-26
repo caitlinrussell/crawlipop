@@ -22,8 +22,10 @@ import { createStore } from "./lib/data-store.mjs";
 import { createDemoDashboard } from "./lib/demo-data.mjs";
 import { fetchSearchConsoleSnapshot } from "./lib/google-search-console.mjs";
 import { createIssue, listTeams } from "./lib/linear.mjs";
+import { analyzeBehaviorJourneys, createBehaviorIssuePayload } from "./lib/behavior-analysis.mjs";
+import { fetchPostHogJourneys } from "./lib/posthog.mjs";
 import { buildRecommendations, createIssuePayload } from "./lib/recommendations.mjs";
-import { hasLinearConfig, hasSearchConsoleConfig, loadConfig } from "./lib/config.mjs";
+import { hasLinearConfig, hasPostHogConfig, hasSearchConsoleConfig, loadConfig } from "./lib/config.mjs";
 
 dotenv.config({ quiet: true });
 
@@ -33,6 +35,7 @@ const app = express();
 let config = await loadConfig();
 const store = createStore(path.resolve(process.cwd(), config.dataDir, "dashboard-cache.json"));
 let syncInFlight = null;
+let behaviorAnalysisInFlight = null;
 
 const AUTH_ERROR_MESSAGES = {
   callback: "Google sign-in did not complete. Try again.",
@@ -138,6 +141,7 @@ function renderLoginPage({ authErrors, errorCode, next }) {
 
 function createDashboardState(baseState) {
   const ticketsBySuggestion = baseState.ticketsBySuggestion ?? {};
+  const behaviorAnalysis = createBehaviorAnalysisState(baseState.behaviorAnalysis);
   const searchConsoleConfigured = hasSearchConsoleConfig(config);
   const linearConfigured = hasLinearConfig(config);
   const searchConsoleMessage = searchConsoleConfigured
@@ -169,8 +173,53 @@ function createDashboardState(baseState) {
       topPages: baseState.topPages ?? [],
       ticketsBySuggestion
     }),
+    behaviorAnalysis,
     ticketsBySuggestion
   };
+}
+
+function createBehaviorAnalysisState(behaviorAnalysis = {}) {
+  const configured = hasPostHogConfig(config);
+  const existingStatus = behaviorAnalysis.status ?? "idle";
+  const status = configured ? existingStatus : "idle";
+  const defaultMessage = configured
+    ? "PostHog behavior analysis is ready to run."
+    : "Add PostHog credentials to analyze Pawprint Kitchen behavior.";
+
+  return {
+    status,
+    configured,
+    ok: configured && behaviorAnalysis.ok !== false && !behaviorAnalysis.error,
+    message: behaviorAnalysis.message ?? defaultMessage,
+    lastAnalyzedAt: behaviorAnalysis.lastAnalyzedAt ?? null,
+    window: behaviorAnalysis.window ?? null,
+    summary: behaviorAnalysis.summary ?? null,
+    suggestions: behaviorAnalysis.suggestions ?? [],
+    ticketsBySuggestion: behaviorAnalysis.ticketsBySuggestion ?? {},
+    error: configured ? behaviorAnalysis.error ?? null : null
+  };
+}
+
+function isBehaviorAnalysisStale(behaviorAnalysis) {
+  if (!hasPostHogConfig(config)) {
+    return false;
+  }
+
+  if (behaviorAnalysisInFlight) {
+    return false;
+  }
+
+  if (!behaviorAnalysis?.lastAnalyzedAt) {
+    return true;
+  }
+
+  const lastAnalyzedAt = new Date(behaviorAnalysis.lastAnalyzedAt).getTime();
+  if (!Number.isFinite(lastAnalyzedAt)) {
+    return true;
+  }
+
+  const maxAgeMs = Math.max(1, config.posthogAnalysisMaxAgeHours) * 60 * 60 * 1000;
+  return Date.now() - lastAnalyzedAt > maxAgeMs;
 }
 
 async function initializeDashboard() {
@@ -204,7 +253,8 @@ async function syncDashboard() {
 
       const nextState = createDashboardState({
         ...snapshot,
-        ticketsBySuggestion: currentState.ticketsBySuggestion ?? {}
+        ticketsBySuggestion: currentState.ticketsBySuggestion ?? {},
+        behaviorAnalysis: currentState.behaviorAnalysis
       });
 
       await store.save(nextState);
@@ -213,6 +263,7 @@ async function syncDashboard() {
       const fallbackState = createDashboardState({
         ...(currentState.lastSyncedAt ? currentState : createDemoDashboard(config.siteUrl)),
         ticketsBySuggestion: currentState.ticketsBySuggestion ?? {},
+        behaviorAnalysis: currentState.behaviorAnalysis,
         connection: {
           ...(currentState.connection ?? {}),
           searchConsole: {
@@ -233,6 +284,123 @@ async function syncDashboard() {
   return syncInFlight;
 }
 
+async function syncBehaviorAnalysis({ force = false } = {}) {
+  if (behaviorAnalysisInFlight) {
+    return behaviorAnalysisInFlight;
+  }
+
+  behaviorAnalysisInFlight = (async () => {
+    config = await loadConfig();
+    const currentState = store.getState();
+    const currentBehavior = createBehaviorAnalysisState(currentState.behaviorAnalysis);
+
+    if (!hasPostHogConfig(config)) {
+      const nextState = await store.merge((state) =>
+        createDashboardState({
+          ...state,
+          behaviorAnalysis: {
+            ...currentBehavior,
+            configured: false,
+            ok: false,
+            status: "idle",
+            message: "Add PostHog credentials to analyze Pawprint Kitchen behavior.",
+            error: null
+          }
+        })
+      );
+      return nextState.behaviorAnalysis;
+    }
+
+    if (!force && !isBehaviorAnalysisStale(currentBehavior)) {
+      return currentBehavior;
+    }
+
+    await store.merge((state) =>
+      createDashboardState({
+        ...state,
+        behaviorAnalysis: {
+          ...currentBehavior,
+          configured: true,
+          ok: true,
+          status: "running",
+          message: "Analyzing Pawprint Kitchen behavior from PostHog.",
+          error: null
+        }
+      })
+    );
+
+    try {
+      const journeys = await fetchPostHogJourneys({
+        host: config.posthogHost,
+        projectId: config.posthogProjectId,
+        personalApiKey: config.posthogPersonalApiKey,
+        lookbackDays: config.posthogLookbackDays,
+        excludedDistinctIds: config.posthogExcludedDistinctIds,
+        excludedEmails: config.posthogExcludedEmails
+      });
+
+      const latestState = store.getState();
+      const ticketsBySuggestion = latestState.behaviorAnalysis?.ticketsBySuggestion ?? {};
+      const analysis = analyzeBehaviorJourneys({
+        events: journeys.events,
+        window: journeys.window,
+        ticketsBySuggestion
+      });
+
+      const nextBehaviorAnalysis = {
+        ...latestState.behaviorAnalysis,
+        ...analysis,
+        configured: true,
+        ok: true,
+        message: analysis.suggestions.length
+          ? `${analysis.suggestions.length} behavior suggestions found.`
+          : "No behavior suggestions surfaced in this window.",
+        lastAnalyzedAt: new Date().toISOString(),
+        ticketsBySuggestion,
+        error: null
+      };
+
+      const nextState = await store.merge((state) =>
+        createDashboardState({
+          ...state,
+          behaviorAnalysis: nextBehaviorAnalysis
+        })
+      );
+
+      return nextState.behaviorAnalysis;
+    } catch (error) {
+      const nextState = await store.merge((state) =>
+        createDashboardState({
+          ...state,
+          behaviorAnalysis: {
+            ...state.behaviorAnalysis,
+            configured: true,
+            ok: false,
+            status: "error",
+            message: error.message,
+            error: error.message
+          }
+        })
+      );
+
+      throw Object.assign(error, {
+        behaviorAnalysis: nextState.behaviorAnalysis
+      });
+    } finally {
+      behaviorAnalysisInFlight = null;
+    }
+  })();
+
+  return behaviorAnalysisInFlight;
+}
+
+function triggerBehaviorAnalysisIfNeeded() {
+  const behaviorAnalysis = store.getState().behaviorAnalysis;
+  if (isBehaviorAnalysisStale(behaviorAnalysis)) {
+    void syncBehaviorAnalysis().catch(() => {});
+  }
+}
+
 await initializeDashboard();
 void syncDashboard().catch(() => {});
 
@@ -248,7 +416,11 @@ app.get("/health", (_request, response) => {
   response.json({
     ok: true,
     source: store.getState().source,
-    lastSyncedAt: store.getState().lastSyncedAt
+    lastSyncedAt: store.getState().lastSyncedAt,
+    behaviorAnalysis: {
+      status: store.getState().behaviorAnalysis?.status,
+      lastAnalyzedAt: store.getState().behaviorAnalysis?.lastAnalyzedAt
+    }
   });
 });
 
@@ -370,6 +542,7 @@ app.get("/api/auth/session", (request, response) => {
 });
 
 app.get("/api/dashboard", async (_request, response) => {
+  triggerBehaviorAnalysisIfNeeded();
   response.json(store.getState());
 });
 
@@ -380,6 +553,22 @@ app.post("/api/sync", async (_request, response) => {
   } catch (error) {
     response.status(500).json({
       error: error.message,
+      dashboard: store.getState()
+    });
+  }
+});
+
+app.post("/api/behavior-analysis/sync", async (_request, response) => {
+  try {
+    const behaviorAnalysis = await syncBehaviorAnalysis({ force: true });
+    response.json({
+      behaviorAnalysis,
+      dashboard: store.getState()
+    });
+  } catch (error) {
+    response.status(500).json({
+      error: error.message,
+      behaviorAnalysis: error.behaviorAnalysis ?? store.getState().behaviorAnalysis,
       dashboard: store.getState()
     });
   }
@@ -457,6 +646,76 @@ app.post("/api/linear/issues", async (request, response) => {
       return createDashboardState({
         ...currentState,
         ticketsBySuggestion
+      });
+    });
+
+    response.json({
+      issue,
+      dashboard: nextState
+    });
+  } catch (error) {
+    response.status(500).json({
+      error: error.message
+    });
+  }
+});
+
+app.post("/api/linear/behavior-issues", async (request, response) => {
+  if (!hasLinearConfig(config)) {
+    response.status(400).json({
+      error: "Linear is not configured."
+    });
+    return;
+  }
+
+  const { suggestionId, teamId } = request.body ?? {};
+  const dashboard = store.getState();
+  const behaviorAnalysis = dashboard.behaviorAnalysis ?? {};
+  const suggestion = (behaviorAnalysis.suggestions ?? []).find((entry) => entry.id === suggestionId);
+  const resolvedTeamId = teamId || config.linearDefaultTeamId;
+
+  if (!suggestion) {
+    response.status(404).json({ error: "Behavior suggestion not found." });
+    return;
+  }
+
+  if (!resolvedTeamId) {
+    response.status(400).json({ error: "Choose a Linear team first." });
+    return;
+  }
+
+  try {
+    const issueInput = createBehaviorIssuePayload({
+      suggestion,
+      siteUrl: "Pawprint Kitchen",
+      analysisWindow: behaviorAnalysis.window
+    });
+
+    const issue = await createIssue({
+      apiKey: config.linearApiKey,
+      teamId: resolvedTeamId,
+      title: issueInput.title,
+      description: issueInput.description
+    });
+
+    const nextState = await store.merge((currentState) => {
+      const currentBehaviorAnalysis = currentState.behaviorAnalysis ?? {};
+      const ticketsBySuggestion = {
+        ...(currentBehaviorAnalysis.ticketsBySuggestion ?? {}),
+        [suggestionId]: issue
+      };
+
+      const suggestions = (currentBehaviorAnalysis.suggestions ?? []).map((entry) =>
+        entry.id === suggestionId ? { ...entry, ticket: issue } : entry
+      );
+
+      return createDashboardState({
+        ...currentState,
+        behaviorAnalysis: {
+          ...currentBehaviorAnalysis,
+          ticketsBySuggestion,
+          suggestions
+        }
       });
     });
 

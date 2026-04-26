@@ -4,6 +4,7 @@ A small SEO ops dashboard that:
 
 - shows Search Console performance at a glance,
 - turns recent query/page changes into recommendations,
+- analyzes Pawprint Kitchen behavior from PostHog,
 - lets you create a Linear issue directly from a suggestion.
 
 The app ships with demo data so the interface is usable before you connect any external services.
@@ -34,6 +35,13 @@ GOOGLE_DATA_DELAY_DAYS=2
 SYNC_SCHEDULE=17 */6 * * *
 LINEAR_API_KEY=
 LINEAR_DEFAULT_TEAM_ID=
+POSTHOG_HOST=https://us.posthog.com
+POSTHOG_PROJECT_ID=
+POSTHOG_PERSONAL_API_KEY=
+POSTHOG_LOOKBACK_DAYS=30
+POSTHOG_ANALYSIS_MAX_AGE_HOURS=24
+POSTHOG_EXCLUDED_DISTINCT_IDS=
+POSTHOG_EXCLUDED_EMAILS=
 ```
 
 Recommended setup:
@@ -71,6 +79,32 @@ The server queries two rolling windows, compares them, and generates recommendat
 
 When you click a suggestion, Crawlipop creates a Linear issue with a prefilled title, metrics, evidence, and next steps.
 
+## PostHog behavior setup
+
+1. Create a PostHog personal API key with project query access.
+2. Set `POSTHOG_HOST`, `POSTHOG_PROJECT_ID`, and `POSTHOG_PERSONAL_API_KEY`.
+3. Add your own PostHog distinct IDs or email addresses to `POSTHOG_EXCLUDED_DISTINCT_IDS` / `POSTHOG_EXCLUDED_EMAILS` so Crawlipop filters out internal behavior.
+
+When the dashboard opens, Crawlipop silently refreshes the Pawprint Kitchen behavior analysis if the cached result is stale. The default window is the last 30 days, and the default cache age is 24 hours.
+
+The behavior queue is tuned for this funnel:
+
+- account signup,
+- recipe creation,
+- premium upgrade.
+
+It uses these explicit events when available:
+
+- `account_signup_started`, `account_signup_completed`,
+- `recipe_create_started`, `recipe_create_completed`,
+- `premium_upgrade_started`, `premium_upgrade_completed`,
+- `checkout_completed`, `checkout_error`,
+- `recipe_create_error`.
+
+Until all of those are instrumented, Crawlipop falls back to existing events such as `sign_up`, `start_draft_imported`, `recipe_updated`, `pricing_plan_selected`, `checkout_started`, `$rageclick`, `$pageview`, and `$pageleave`. Missing funnel events can surface as instrumentation suggestions.
+
+Behavior suggestions use confidence percentages, can be dismissed independently from SEO suggestions, and can create Linear tickets with prefixes such as `[Bug]`, `[UX]`, `[Growth]`, or `[Instrumentation]`.
+
 ## Notes
 
 - The app is locked behind Google auth and an `AUTH_ALLOWED_EMAILS` allowlist when those auth variables are configured.
@@ -100,6 +134,13 @@ GOOGLE_DATA_DELAY_DAYS=2
 SYNC_SCHEDULE=17 */6 * * *
 LINEAR_API_KEY=
 LINEAR_DEFAULT_TEAM_ID=
+POSTHOG_HOST=https://us.posthog.com
+POSTHOG_PROJECT_ID=...
+POSTHOG_PERSONAL_API_KEY=...
+POSTHOG_LOOKBACK_DAYS=30
+POSTHOG_ANALYSIS_MAX_AGE_HOURS=24
+POSTHOG_EXCLUDED_DISTINCT_IDS=
+POSTHOG_EXCLUDED_EMAILS=
 ```
 
 Notes:
