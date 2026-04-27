@@ -156,6 +156,10 @@ function humanizeSite(siteUrl) {
     .replace(/\/$/, "");
 }
 
+function productName(dashboard = state.dashboard) {
+  return dashboard?.productName || "your product";
+}
+
 function titleCase(value) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
@@ -1133,8 +1137,8 @@ function renderBehaviorSummary(behaviorAnalysis = {}) {
     ["Events", compactNumber(summary.eventsAnalyzed)],
     ["Rage clicks", compactNumber(summary.rageClicks)],
     ["Signups", compactNumber(summary.signups)],
-    ["Recipe actions", compactNumber(summary.recipeActions)],
-    ["Premium signals", compactNumber(summary.premiumSignals)]
+    ["Key actions", compactNumber(summary.keyActions)],
+    ["Conversion signals", compactNumber(summary.conversionSignals)]
   ];
 
   for (const [label, value] of stats) {
@@ -1186,7 +1190,7 @@ function renderBehaviorQueue(behaviorAnalysis = {}, linearConfigured) {
 
   if (!behaviorAnalysis.configured) {
     elements.behaviorPagination.replaceChildren();
-    elements.behaviorList.innerHTML = `<div class="empty-state">Add PostHog credentials to analyze Pawprint Kitchen behavior.</div>`;
+    elements.behaviorList.innerHTML = `<div class="empty-state">Add PostHog credentials to analyze ${escapeHtml(productName())} behavior.</div>`;
     elements.behaviorDetail.className = "detail-card empty";
     elements.behaviorDetail.innerHTML = `<div>PostHog is not connected yet.</div>`;
     return;
@@ -1610,11 +1614,11 @@ function renderDashboard() {
 
   elements.behaviorMeta.textContent = behaviorAnalysis.configured
     ? behaviorWindow?.start && behaviorWindow?.end
-      ? `Pawprint Kitchen behavior from ${formatShortDate(behaviorWindow.start)} to ${formatShortDate(behaviorWindow.end)} • analyzed ${formatDateTime(behaviorAnalysis.lastAnalyzedAt)}`
+      ? `${productName(dashboard)} behavior from ${formatShortDate(behaviorWindow.start)} to ${formatShortDate(behaviorWindow.end)} • analyzed ${formatDateTime(behaviorAnalysis.lastAnalyzedAt)}`
       : behaviorStatus === "running"
-        ? "Analyzing Pawprint Kitchen behavior from PostHog."
-        : "Ready to analyze Pawprint Kitchen behavior."
-    : "Connect PostHog to analyze Pawprint Kitchen behavior.";
+        ? `Analyzing ${productName(dashboard)} behavior from PostHog.`
+        : `Ready to analyze ${productName(dashboard)} behavior.`
+    : `Connect PostHog to analyze ${productName(dashboard)} behavior.`;
 
   elements.behaviorSyncButton.disabled = state.analyzingBehavior || behaviorStatus === "running" || !behaviorAnalysis.configured;
   elements.behaviorSyncButton.textContent =
@@ -1624,7 +1628,7 @@ function renderDashboard() {
     : "Latest behavior analysis window";
   elements.behaviorTableMeta.textContent = behaviorAnalysis.summary?.behaviorRows?.length
     ? `${compactNumber(behaviorAnalysis.summary.eventsAnalyzed)} events across ${compactNumber(behaviorAnalysis.summary.usersAnalyzed)} users.`
-    : "Signup, recipe, premium, and friction signals from PostHog.";
+    : "Signup, activation, conversion, and friction signals from PostHog.";
 
   renderSummary(dashboard.summary);
   renderTrend(dashboard.trend);

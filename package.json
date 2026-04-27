@@ -1,19 +1,31 @@
 {
   "name": "crawlipop",
   "version": "0.1.0",
+  "description": "A small SEO ops dashboard for Search Console insights, behavior analysis, and Linear handoff.",
   "private": true,
+  "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/caitlinrussell/crawlipop.git"
+  },
   "scripts": {
     "dev": "node --watch server.mjs",
     "start": "node server.mjs",
-    "check": "node --check server.mjs && node --check lib/auth.mjs && node --check lib/behavior-analysis.mjs && node --check lib/config.mjs && node --check lib/data-store.mjs && node --check lib/demo-data.mjs && node --check lib/google-search-console.mjs && node --check lib/linear.mjs && node --check lib/posthog.mjs && node --check lib/recommendations.mjs && node --check public/app.js"
+    "check": "node --check server.mjs && node --check lib/auth.mjs && node --check lib/behavior-analysis.mjs && node --check lib/config.mjs && node --check lib/data-store.mjs && node --check lib/demo-data.mjs && node --check lib/google-search-console.mjs && node --check lib/linear.mjs && node --check lib/posthog.mjs && node --check lib/recommendations.mjs && node --check public/app.js",
+    "test": "node --test",
+    "test:e2e": "playwright test",
+    "test:all": "npm run check && npm test && npm run test:e2e"
   },
   "dependencies": {
     "chart.js": "^4.5.1",
-    "dotenv": "^17.2.3",
+    "dotenv": "^17.4.2",
     "express": "^5.1.0",
     "google-auth-library": "^10.4.1",
-    "jose": "^6.1.0",
+    "jose": "^6.2.3",
     "node-cron": "^4.2.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1"
   }
 }

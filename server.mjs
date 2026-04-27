@@ -111,7 +111,7 @@ function renderLoginPage({ authErrors, errorCode, next }) {
         <p class="login-kicker">Protected workspace</p>
         <h1>Sign in with Google</h1>
         <p class="login-copy">
-          This deployment uses the same Google allowlist pattern as Ember. Sign in with an approved Google account to open the dashboard.
+          Sign in with an approved Google account to open this protected dashboard.
         </p>
         ${
           message
@@ -156,6 +156,7 @@ function createDashboardState(baseState) {
 
   return {
     ...baseState,
+    productName: config.productName,
     connection: {
       searchConsole: {
         configured: searchConsoleConfigured,
@@ -179,15 +180,17 @@ function createDashboardState(baseState) {
 }
 
 function createBehaviorAnalysisState(behaviorAnalysis = {}) {
-  const configured = hasPostHogConfig(config);
+  const demo = behaviorAnalysis.demo === true;
+  const configured = hasPostHogConfig(config) || demo;
   const existingStatus = behaviorAnalysis.status ?? "idle";
   const status = configured ? existingStatus : "idle";
   const defaultMessage = configured
     ? "PostHog behavior analysis is ready to run."
-    : "Add PostHog credentials to analyze Pawprint Kitchen behavior.";
+    : `Add PostHog credentials to analyze ${config.productName} behavior.`;
 
   return {
     status,
+    demo,
     configured,
     ok: configured && behaviorAnalysis.ok !== false && !behaviorAnalysis.error,
     message: behaviorAnalysis.message ?? defaultMessage,
@@ -208,6 +211,10 @@ function hasBehaviorAnalysisInsights(behaviorAnalysis) {
 function isBehaviorAnalysisExpired(behaviorAnalysis) {
   if (!hasPostHogConfig(config)) {
     return false;
+  }
+
+  if (behaviorAnalysis?.demo) {
+    return true;
   }
 
   if (!hasBehaviorAnalysisInsights(behaviorAnalysis)) {
@@ -304,6 +311,10 @@ async function syncBehaviorAnalysis({ force = false } = {}) {
     const currentBehavior = createBehaviorAnalysisState(currentState.behaviorAnalysis);
 
     if (!hasPostHogConfig(config)) {
+      if (currentBehavior.demo) {
+        return currentBehavior;
+      }
+
       const nextState = await store.merge((state) =>
         createDashboardState({
           ...state,
@@ -312,7 +323,7 @@ async function syncBehaviorAnalysis({ force = false } = {}) {
             configured: false,
             ok: false,
             status: "idle",
-            message: "Add PostHog credentials to analyze Pawprint Kitchen behavior.",
+            message: `Add PostHog credentials to analyze ${config.productName} behavior.`,
             error: null
           }
         })
@@ -332,7 +343,7 @@ async function syncBehaviorAnalysis({ force = false } = {}) {
           configured: true,
           ok: true,
           status: "running",
-          message: "Analyzing Pawprint Kitchen behavior from PostHog.",
+          message: `Analyzing ${config.productName} behavior from PostHog.`,
           error: null
         }
       })
@@ -526,6 +537,11 @@ app.use(async (request, response, next) => {
     return;
   }
 
+  if (!isGoogleAuthConfigured()) {
+    next();
+    return;
+  }
+
   const session = await getSessionFromRequest(request);
 
   if (session) {
@@ -700,7 +716,7 @@ app.post("/api/linear/behavior-issues", async (request, response) => {
   try {
     const issueInput = createBehaviorIssuePayload({
       suggestion,
-      siteUrl: "Pawprint Kitchen",
+      siteUrl: config.productName,
       analysisWindow: behaviorAnalysis.window
     });
 

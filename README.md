@@ -4,10 +4,20 @@ A small SEO ops dashboard that:
 
 - shows Search Console performance at a glance,
 - turns recent query/page changes into recommendations,
-- analyzes Pawprint Kitchen behavior from PostHog,
+- analyzes product behavior from PostHog,
 - lets you create a Linear issue directly from a suggestion.
 
-The app ships with demo data so the interface is usable before you connect any external services.
+The app ships with demo SEO and behavior data so the interface is usable before you connect any external services.
+
+## Screenshots
+
+![Crawlipop dashboard overview](docs/screenshots/dashboard-desktop.jpg)
+
+![Behavior queue with product insights](docs/screenshots/behavior-queue.jpg)
+
+![SEO suggestion queue](docs/screenshots/suggestion-queue.jpg)
+
+<img src="docs/screenshots/dashboard-mobile.jpg" alt="Crawlipop mobile dashboard" width="320" />
 
 ## Run it
 
@@ -19,11 +29,23 @@ npm start
 
 Open `http://localhost:3000`.
 
+## Tests
+
+```bash
+npm run check
+npm test
+npm run test:e2e
+npm run test:all
+```
+
+The Node test suite covers auth helpers, configuration, local storage, recommendation generation, behavior analysis, and PostHog normalization. The Playwright suite starts the real app in demo mode and verifies the dashboard, suggestion dismissal, sync flow, and public demo API responses.
+
 ## Environment
 
 ```env
 PORT=3000
 DATA_DIR=.data
+PRODUCT_NAME=your product
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 AUTH_SESSION_SECRET=
@@ -50,6 +72,7 @@ Recommended setup:
 - `AUTH_SESSION_SECRET` falls back to `ppk` outside production, but set an explicit random value for any real deployment.
 - Put your Google service account JSON in a local file and set `GOOGLE_SERVICE_ACCOUNT_KEY_FILE`.
 - Use `GOOGLE_SITE_URL=sc-domain:example.com` for domain properties or the full URL for URL-prefix properties.
+- Set `PRODUCT_NAME` to label behavior analysis for your app or product.
 - Set `LINEAR_DEFAULT_TEAM_ID` if you want one-click issue creation without choosing a team in the UI.
 
 For Google auth, register these callback URLs in your OAuth client:
@@ -85,23 +108,22 @@ When you click a suggestion, Crawlipop creates a Linear issue with a prefilled t
 2. Set `POSTHOG_HOST`, `POSTHOG_PROJECT_ID`, and `POSTHOG_PERSONAL_API_KEY`.
 3. Add your own PostHog distinct IDs or email addresses to `POSTHOG_EXCLUDED_DISTINCT_IDS` / `POSTHOG_EXCLUDED_EMAILS` so Crawlipop filters out internal behavior.
 
-When the dashboard opens, Crawlipop silently refreshes the Pawprint Kitchen behavior analysis if the cached result is stale. The default window is the last 30 days, and the default cache age is 24 hours.
+When the dashboard opens, Crawlipop silently refreshes the product behavior analysis if the cached result is stale. The default window is the last 30 days, and the default cache age is 24 hours.
 
-The behavior queue is tuned for this funnel:
+The behavior queue is tuned for this generic funnel:
 
 - account signup,
-- recipe creation,
-- premium upgrade.
+- activation or key product action,
+- paid conversion or checkout.
 
 It uses these explicit events when available:
 
 - `account_signup_started`, `account_signup_completed`,
-- `recipe_create_started`, `recipe_create_completed`,
-- `premium_upgrade_started`, `premium_upgrade_completed`,
-- `checkout_completed`, `checkout_error`,
-- `recipe_create_error`.
+- `activation_started`, `activation_completed`,
+- `conversion_started`, `conversion_completed`,
+- `checkout_completed`, `checkout_error`, `conversion_error`.
 
-Until all of those are instrumented, Crawlipop falls back to existing events such as `sign_up`, `start_draft_imported`, `recipe_updated`, `pricing_plan_selected`, `checkout_started`, `$rageclick`, `$pageview`, and `$pageleave`. Missing funnel events can surface as instrumentation suggestions.
+Until all of those are instrumented, Crawlipop falls back to common events such as `sign_up`, `primary_action_started`, `primary_action_completed`, `pricing_plan_selected`, `checkout_started`, `$rageclick`, `$pageview`, and `$pageleave`. Missing funnel events can surface as instrumentation suggestions.
 
 Behavior suggestions use confidence percentages, can be dismissed independently from SEO suggestions, and can create Linear tickets with prefixes such as `[Bug]`, `[UX]`, `[Growth]`, or `[Instrumentation]`.
 
@@ -124,6 +146,7 @@ Recommended Railway variables:
 
 ```env
 DATA_DIR=/data
+PRODUCT_NAME=your product
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 AUTH_SESSION_SECRET=...
@@ -150,6 +173,14 @@ Notes:
 - Set an explicit `AUTH_SESSION_SECRET` in Railway; the `ppk` fallback is only for non-production environments.
 - Use `GOOGLE_SERVICE_ACCOUNT_JSON` on Railway rather than `GOOGLE_SERVICE_ACCOUNT_KEY_FILE`.
 - Without a mounted volume, the dashboard cache is ephemeral and will reset on redeploy/restart.
+
+## Security
+
+Do not commit `.env`, service account JSON files, PostHog exports, Linear API keys, or generated dashboard caches. See `SECURITY.md` for private vulnerability reporting guidance.
+
+## License
+
+MIT
 
 ## References
 
