@@ -1,7 +1,7 @@
 {
   "name": "crawlipop",
   "version": "0.1.0",
-  "description": "A small SEO ops dashboard for Search Console insights, behavior analysis, and Linear handoff.",
+  "description": "A small SEO ops dashboard for Google Search Console insights, PostHog behavior analysis, and Linear handoff.",
   "private": true,
   "license": "MIT",
   "type": "module",

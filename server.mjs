@@ -105,7 +105,7 @@ function renderLoginPage({ authErrors, errorCode, next }) {
           </div>
           <div>
             <p class="brand-name">Crawlipop</p>
-            <p class="brand-meta">Search Console insights and Linear handoff, now gated behind Google auth.</p>
+            <p class="brand-meta">Google Search Console insights, PostHog behavior analysis, and Linear handoff.</p>
           </div>
         </div>
         <p class="login-kicker">Protected workspace</p>

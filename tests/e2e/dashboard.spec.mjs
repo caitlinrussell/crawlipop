@@ -7,12 +7,13 @@ test("demo dashboard loads without configured auth or external services", async 
   await expect(page.getByText(/Demo preview for sc-domain:example\.com/)).toBeVisible();
   await expect(page.locator("#authEmail")).toHaveText("Signed in");
   await expect(page.getByRole("button", { name: "Sync Search Console" })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Analyze behavior" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Analyze behavior" })).toBeEnabled();
   await expect(page.getByLabel("Linear team")).toBeDisabled();
   await expect(page.getByLabel("Linear team")).toHaveValue("");
   await expect(page.getByRole("button", { name: /Tighten the snippet for.*meta title ideas/ })).toBeVisible();
   await expect(page.getByRole("cell", { name: "meta title ideas" })).toBeVisible();
-  await expect(page.getByText("PostHog is not connected yet.")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Users start activation but do not finish/ })).toBeVisible();
+  await expect(page.getByText(/Test Product behavior from/)).toBeVisible();
 });
 
 test("SEO suggestions can be dismissed, hidden, shown, and restored", async ({ page }) => {
@@ -22,7 +23,7 @@ test("SEO suggestions can be dismissed, hidden, shown, and restored", async ({ p
   await targetSuggestion.click();
   await expect(page.getByRole("heading", { name: /Tighten the snippet for.*meta title ideas/ })).toBeVisible();
 
-  await page.getByRole("button", { name: "Dismiss for now" }).click();
+  await page.locator("#detailDismiss").click();
   await expect(page.getByText(/1 dismissed item hidden for now/)).toBeVisible();
   await expect(page.getByRole("button", { name: /Tighten the snippet for.*meta title ideas/ })).toHaveCount(0);
 

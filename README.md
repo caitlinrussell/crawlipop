@@ -1,13 +1,13 @@
 # Crawlipop
 
-A small SEO ops dashboard that:
+A small SEO ops dashboard for Google Search Console and PostHog that:
 
 - shows Search Console performance at a glance,
 - turns recent query/page changes into recommendations,
 - analyzes product behavior from PostHog,
 - lets you create a Linear issue directly from a suggestion.
 
-The app ships with demo SEO and behavior data so the interface is usable before you connect any external services.
+The app ships with demo Google Search Console and PostHog-style behavior data so the interface is usable before you connect any external services.
 
 ## Screenshots
 
