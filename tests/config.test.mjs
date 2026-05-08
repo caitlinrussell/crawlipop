@@ -69,8 +69,8 @@ test("loadConfig applies safe defaults for an unconfigured demo environment", as
 
 test("loadConfig parses explicit values and inline Google credentials", async () => {
   const credentials = {
-    client_email: "service@example.iam.gserviceaccount.com",
-    private_key: "private-key"
+    client_email: " service@example.iam.gserviceaccount.com ",
+    private_key: "-----BEGIN PRIVATE KEY-----\\nprivate-key\\n-----END PRIVATE KEY-----\\n"
   };
 
   await withEnv(
@@ -99,7 +99,10 @@ test("loadConfig parses explicit values and inline Google credentials", async ()
       assert.equal(config.dataDir, "tmp-data");
       assert.equal(config.productName, "Crawlipop");
       assert.equal(config.siteUrl, "sc-domain:crawlipop.dev");
-      assert.deepEqual(config.googleCredentials, credentials);
+      assert.deepEqual(config.googleCredentials, {
+        client_email: "service@example.iam.gserviceaccount.com",
+        private_key: "-----BEGIN PRIVATE KEY-----\nprivate-key\n-----END PRIVATE KEY-----"
+      });
       assert.equal(config.googleDataDelayDays, 5);
       assert.equal(config.syncSchedule, "*/15 * * * *");
       assert.equal(config.linearApiKey, "lin-api-key");

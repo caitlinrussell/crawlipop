@@ -1714,6 +1714,7 @@ async function syncDashboard() {
     state.syncing = false;
     elements.syncButton.disabled = false;
     elements.syncButton.textContent = "Sync Search Console";
+    renderDashboard();
   }
 }
 
