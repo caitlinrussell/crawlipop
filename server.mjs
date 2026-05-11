@@ -20,7 +20,7 @@ import {
 } from "./lib/auth.mjs";
 import { createStore } from "./lib/data-store.mjs";
 import { createDemoDashboard } from "./lib/demo-data.mjs";
-import { fetchSearchConsoleSnapshot } from "./lib/google-search-console.mjs";
+import { fetchSearchConsoleSnapshot, normalizeSearchConsoleWindowDays } from "./lib/google-search-console.mjs";
 import { createIssue, listTeams } from "./lib/linear.mjs";
 import { analyzeBehaviorJourneys, createBehaviorIssuePayload } from "./lib/behavior-analysis.mjs";
 import { fetchPostHogJourneys } from "./lib/posthog.mjs";
@@ -35,6 +35,7 @@ const app = express();
 let config = await loadConfig();
 const store = createStore(path.resolve(process.cwd(), config.dataDir, "dashboard-cache.json"));
 let syncInFlight = null;
+let syncInFlightWindowDays = null;
 let behaviorAnalysisInFlight = null;
 
 const AUTH_ERROR_MESSAGES = {
@@ -44,8 +45,100 @@ const AUTH_ERROR_MESSAGES = {
   unauthorized: "That Google account is not on the Crawlipop allowlist."
 };
 
+const SEARCH_CONSOLE_MAX_SYNC_AGE_HOURS = 24;
+
 function getQueryValue(value) {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function hoursSince(value) {
+  if (!value) {
+    return null;
+  }
+
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? (Date.now() - timestamp) / (60 * 60 * 1000) : null;
+}
+
+function daysSinceDate(value) {
+  if (!value) {
+    return null;
+  }
+
+  const timestamp = new Date(`${value}T23:59:59.999Z`).getTime();
+  return Number.isFinite(timestamp) ? Math.max(0, Math.floor((Date.now() - timestamp) / (24 * 60 * 60 * 1000))) : null;
+}
+
+function daysSinceTimestampDate(value) {
+  if (!value) {
+    return null;
+  }
+
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? Math.max(0, Math.floor((Date.now() - timestamp) / (24 * 60 * 60 * 1000))) : null;
+}
+
+function createFreshnessState(baseState, behaviorAnalysis) {
+  const searchConfigured = hasSearchConsoleConfig(config);
+  const searchAgeHours = hoursSince(baseState.lastSyncedAt);
+  const dataThrough = baseState.dateWindow?.recent?.endDate ?? null;
+  const searchDataLagDays = daysSinceDate(dataThrough);
+  const expectedDataLagDays = Math.max(1, config.googleDataDelayDays) + 2;
+  const hasValidationWindow = Boolean(
+    baseState.validationWindow?.recent?.startDate && baseState.validationWindow?.recent?.endDate
+  );
+  const searchStale =
+    baseState.source !== "live" ||
+    !hasValidationWindow ||
+    searchAgeHours === null ||
+    searchAgeHours > SEARCH_CONSOLE_MAX_SYNC_AGE_HOURS ||
+    searchDataLagDays === null ||
+    searchDataLagDays > expectedDataLagDays;
+
+  const behaviorAgeHours = hoursSince(behaviorAnalysis.lastAnalyzedAt);
+  const behaviorWindowEnd = behaviorAnalysis.window?.end ?? null;
+  const behaviorDataLagDays = daysSinceTimestampDate(behaviorWindowEnd);
+  const behaviorConfigured = hasPostHogConfig(config);
+  const behaviorStale =
+    !behaviorConfigured ||
+    behaviorAnalysis.demo === true ||
+    behaviorAnalysis.status === "running" ||
+    behaviorAnalysis.status === "error" ||
+    behaviorAgeHours === null ||
+    behaviorAgeHours > Math.max(1, config.posthogAnalysisMaxAgeHours) ||
+    behaviorDataLagDays === null ||
+    behaviorDataLagDays > Math.max(1, config.posthogLookbackDays);
+
+  return {
+    searchConsole: {
+      stale: searchStale,
+      actionReady: searchConfigured && baseState.source === "live" && !searchStale,
+      message: !searchConfigured
+        ? "Demo Search Console suggestions are not action-ready. Connect Search Console and sync before creating issues."
+        : !hasValidationWindow
+          ? "Sync Search Console to validate suggestions against the latest 7 days before creating issues."
+          : searchStale
+            ? "Refresh Search Console before creating issues from this queue."
+            : "Search Console evidence is fresh enough for action.",
+      dataThrough,
+      lastSyncedAt: baseState.lastSyncedAt ?? null,
+      ageHours: searchAgeHours === null ? null : Number(searchAgeHours.toFixed(2)),
+      dataLagDays: searchDataLagDays
+    },
+    behaviorAnalysis: {
+      stale: behaviorStale,
+      actionReady: behaviorConfigured && behaviorAnalysis.demo !== true && !behaviorStale,
+      message: !behaviorConfigured
+        ? "Demo behavior suggestions are not action-ready. Connect PostHog and analyze current events before creating issues."
+        : behaviorStale
+          ? "Refresh behavior analysis before creating issues from this queue."
+          : "Behavior evidence is fresh enough for action.",
+      windowEnd: behaviorWindowEnd,
+      lastAnalyzedAt: behaviorAnalysis.lastAnalyzedAt ?? null,
+      ageHours: behaviorAgeHours === null ? null : Number(behaviorAgeHours.toFixed(2)),
+      dataLagDays: behaviorDataLagDays
+    }
+  };
 }
 
 function escapeHtml(value) {
@@ -142,6 +235,8 @@ function renderLoginPage({ authErrors, errorCode, next }) {
 function createDashboardState(baseState) {
   const ticketsBySuggestion = baseState.ticketsBySuggestion ?? {};
   const behaviorAnalysis = createBehaviorAnalysisState(baseState.behaviorAnalysis);
+  const searchConsoleWindowDays = normalizeSearchConsoleWindowDays(baseState.searchConsoleWindowDays);
+  const freshness = createFreshnessState({ ...baseState, searchConsoleWindowDays }, behaviorAnalysis);
   const searchConsoleConfigured = hasSearchConsoleConfig(config);
   const linearConfigured = hasLinearConfig(config);
   const searchConsoleMessage = searchConsoleConfigured
@@ -156,6 +251,7 @@ function createDashboardState(baseState) {
 
   return {
     ...baseState,
+    searchConsoleWindowDays,
     productName: config.productName,
     connection: {
       searchConsole: {
@@ -175,6 +271,7 @@ function createDashboardState(baseState) {
       ticketsBySuggestion
     }),
     behaviorAnalysis,
+    freshness,
     ticketsBySuggestion
   };
 }
@@ -249,26 +346,39 @@ async function initializeDashboard() {
   await store.save(createDashboardState(createDemoDashboard(config.siteUrl)));
 }
 
-async function syncDashboard() {
+async function syncDashboard({ windowDays } = {}) {
+  const requestedWindowDays = normalizeSearchConsoleWindowDays(
+    windowDays ?? store.getState().searchConsoleWindowDays ?? 28
+  );
+
   if (syncInFlight) {
-    return syncInFlight;
+    if (syncInFlightWindowDays === requestedWindowDays) {
+      return syncInFlight;
+    }
+
+    await syncInFlight.catch(() => {});
+    return syncDashboard({ windowDays: requestedWindowDays });
   }
 
+  syncInFlightWindowDays = requestedWindowDays;
   syncInFlight = (async () => {
     config = await loadConfig();
     const currentState = store.getState();
+    const searchConsoleWindowDays = requestedWindowDays;
 
     try {
       const snapshot = hasSearchConsoleConfig(config)
         ? await fetchSearchConsoleSnapshot({
             credentials: config.googleCredentials,
             siteUrl: config.siteUrl,
-            delayDays: config.googleDataDelayDays
+            delayDays: config.googleDataDelayDays,
+            windowDays: searchConsoleWindowDays
           })
-        : createDemoDashboard(config.siteUrl);
+        : createDemoDashboard(config.siteUrl, searchConsoleWindowDays);
 
       const nextState = createDashboardState({
         ...snapshot,
+        searchConsoleWindowDays,
         ticketsBySuggestion: currentState.ticketsBySuggestion ?? {},
         behaviorAnalysis: currentState.behaviorAnalysis
       });
@@ -277,7 +387,8 @@ async function syncDashboard() {
       return nextState;
     } catch (error) {
       const fallbackState = createDashboardState({
-        ...(currentState.lastSyncedAt ? currentState : createDemoDashboard(config.siteUrl)),
+        ...(currentState.lastSyncedAt ? currentState : createDemoDashboard(config.siteUrl, searchConsoleWindowDays)),
+        searchConsoleWindowDays,
         ticketsBySuggestion: currentState.ticketsBySuggestion ?? {},
         behaviorAnalysis: currentState.behaviorAnalysis,
         connection: {
@@ -294,6 +405,7 @@ async function syncDashboard() {
       throw error;
     } finally {
       syncInFlight = null;
+      syncInFlightWindowDays = null;
     }
   })();
 
@@ -575,9 +687,11 @@ app.get("/api/dashboard", async (_request, response) => {
   response.json(store.getState());
 });
 
-app.post("/api/sync", async (_request, response) => {
+app.post("/api/sync", async (request, response) => {
   try {
-    const dashboard = await syncDashboard();
+    const dashboard = await syncDashboard({
+      windowDays: request.body?.windowDays
+    });
     response.json(dashboard);
   } catch (error) {
     response.status(500).json({
@@ -641,9 +755,17 @@ app.post("/api/linear/issues", async (request, response) => {
   const dashboard = store.getState();
   const recommendation = dashboard.recommendations.find((entry) => entry.id === suggestionId);
   const resolvedTeamId = teamId || config.linearDefaultTeamId;
+  const freshness = dashboard.freshness?.searchConsole;
 
   if (!recommendation) {
     response.status(404).json({ error: "Suggestion not found." });
+    return;
+  }
+
+  if (!freshness?.actionReady) {
+    response.status(409).json({
+      error: freshness?.message ?? "Refresh Search Console before creating an issue from this suggestion."
+    });
     return;
   }
 
@@ -702,9 +824,17 @@ app.post("/api/linear/behavior-issues", async (request, response) => {
   const behaviorAnalysis = dashboard.behaviorAnalysis ?? {};
   const suggestion = (behaviorAnalysis.suggestions ?? []).find((entry) => entry.id === suggestionId);
   const resolvedTeamId = teamId || config.linearDefaultTeamId;
+  const freshness = dashboard.freshness?.behaviorAnalysis;
 
   if (!suggestion) {
     response.status(404).json({ error: "Behavior suggestion not found." });
+    return;
+  }
+
+  if (!freshness?.actionReady) {
+    response.status(409).json({
+      error: freshness?.message ?? "Refresh behavior analysis before creating an issue from this suggestion."
+    });
     return;
   }
 

@@ -112,6 +112,54 @@ test("buildRecommendations attaches existing Linear tickets by suggestion id", (
   );
 });
 
+test("buildRecommendations suppresses suggestions that recovered in the latest validation window", () => {
+  const recommendations = buildRecommendations({
+    topQueries: [
+      {
+        key: "fixed low ctr query",
+        clicks: 8,
+        impressions: 800,
+        ctr: 0.01,
+        position: 4.8,
+        validation: {
+          clicks: 12,
+          impressions: 120,
+          ctr: 0.1,
+          position: 3.9,
+          clicksChange: 0.5,
+          startDate: "2026-05-03",
+          endDate: "2026-05-09"
+        }
+      },
+      {
+        key: "still low ctr query",
+        clicks: 2,
+        impressions: 820,
+        ctr: 0.0024,
+        position: 5.2,
+        validation: {
+          clicks: 1,
+          impressions: 110,
+          ctr: 0.009,
+          position: 5.1,
+          clicksChange: null,
+          startDate: "2026-05-03",
+          endDate: "2026-05-09"
+        }
+      }
+    ],
+    topPages: []
+  });
+
+  assert.equal(recommendations.some((entry) => entry.sourceKey === "fixed low ctr query"), false);
+  assert.equal(recommendations.some((entry) => entry.sourceKey === "still low ctr query"), true);
+  assert.ok(
+    recommendations
+      .find((entry) => entry.sourceKey === "still low ctr query")
+      .evidence.some((entry) => entry.includes("Latest check 2026-05-03 to 2026-05-09"))
+  );
+});
+
 test("createIssuePayload formats a Linear-ready SEO issue", () => {
   const recommendation = buildRecommendations({ topQueries, topPages }).find((entry) => entry.kind === "ctr");
   const payload = createIssuePayload({

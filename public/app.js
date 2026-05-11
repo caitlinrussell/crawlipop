@@ -1,8 +1,12 @@
+const SUGGESTIONS_PER_PAGE = 4;
+const SEARCH_WINDOW_DAYS = [7, 14, 28, 60, 90];
+
 const state = {
   dashboard: null,
   session: null,
   teams: [],
   selectedTeamId: localStorage.getItem("crawlipop:selected-team") ?? "",
+  selectedSearchWindowDays: normalizeSearchWindowDays(localStorage.getItem("crawlipop:search-window-days") ?? 28),
   selectedSuggestionId: null,
   selectedBehaviorSuggestionId: null,
   suggestionPage: 0,
@@ -25,6 +29,7 @@ const elements = {
   authEmail: document.querySelector("#authEmail"),
   syncButton: document.querySelector("#syncButton"),
   teamSelect: document.querySelector("#teamSelect"),
+  windowSelect: document.querySelector("#windowSelect"),
   deskTitle: document.querySelector("#deskTitle"),
   overviewMeta: document.querySelector("#overviewMeta"),
   focusPrompt: document.querySelector("#focusPrompt"),
@@ -51,11 +56,14 @@ const elements = {
   pagesTable: document.querySelector("#pagesTable")
 };
 
-const SUGGESTIONS_PER_PAGE = 4;
-
 let trendChart = null;
 let activityChart = null;
 let behaviorPollTimer = null;
+
+function normalizeSearchWindowDays(value) {
+  const parsed = Number.parseInt(value, 10);
+  return SEARCH_WINDOW_DAYS.includes(parsed) ? parsed : 28;
+}
 
 async function requestJson(url, options = {}) {
   const response = await fetch(url, {
@@ -96,6 +104,10 @@ function formatDateTime(value) {
     hour: "numeric",
     minute: "2-digit"
   }).format(new Date(value));
+}
+
+function formatDataThrough(value) {
+  return value ? `data through ${formatShortDate(value)}` : "no synced data window";
 }
 
 function formatShortDate(value) {
@@ -158,6 +170,25 @@ function humanizeSite(siteUrl) {
 
 function productName(dashboard = state.dashboard) {
   return dashboard?.productName || "your product";
+}
+
+function isSearchActionReady(dashboard = state.dashboard) {
+  const freshness = dashboard?.freshness?.searchConsole;
+  return freshness ? freshness.actionReady === true : dashboard?.source === "live";
+}
+
+function isBehaviorActionReady(dashboard = state.dashboard) {
+  const freshness = dashboard?.freshness?.behaviorAnalysis;
+  return freshness ? freshness.actionReady === true : false;
+}
+
+function syncSelectedWindowFromDashboard(dashboard = state.dashboard) {
+  const storedWindow = localStorage.getItem("crawlipop:search-window-days");
+  if (!storedWindow && dashboard?.searchConsoleWindowDays) {
+    state.selectedSearchWindowDays = normalizeSearchWindowDays(dashboard.searchConsoleWindowDays);
+  }
+
+  elements.windowSelect.value = String(state.selectedSearchWindowDays);
 }
 
 function titleCase(value) {
@@ -962,6 +993,8 @@ function renderSuggestions(recommendations = [], linearConfigured, dismissedCoun
             ? "Hidden from active queue"
             : recommendation.ticket?.identifier
               ? recommendation.ticket.identifier
+              : !isSearchActionReady()
+                ? "Needs refresh"
               : linearConfigured
                 ? "Ready for ticket"
                 : "Needs Linear"
@@ -989,14 +1022,17 @@ function renderSuggestionDetail(recommendation, linearConfigured) {
 
   elements.suggestionDetail.className = "detail-card";
 
-  const readyForTicket = linearConfigured && Boolean(state.selectedTeamId);
+  const evidenceReady = isSearchActionReady();
+  const readyForTicket = linearConfigured && Boolean(state.selectedTeamId) && evidenceReady;
   const isCreating = state.creatingSuggestionId === recommendation.id;
   const dismissed = isDismissedSuggestion(recommendation.id);
   const actionLabel = recommendation.ticket?.identifier
     ? recommendation.ticket.identifier
     : isCreating
       ? "Creating..."
-      : readyForTicket
+      : !evidenceReady
+        ? "Refresh evidence first"
+        : readyForTicket
         ? "Create Linear ticket"
         : linearConfigured
           ? "Pick a team first"
@@ -1060,6 +1096,8 @@ function renderSuggestionDetail(recommendation, linearConfigured) {
           ? "Dismissed suggestions stay out of the active queue until you restore them."
           : recommendation.ticket?.url
           ? "Ticket already created."
+          : !evidenceReady
+            ? escapeHtml(state.dashboard?.freshness?.searchConsole?.message ?? "Refresh Search Console before creating an issue.")
           : readyForTicket
             ? "This suggestion is ready to send to Linear."
             : linearConfigured
@@ -1286,6 +1324,8 @@ function renderBehaviorListItem(suggestion, selectedSuggestion, linearConfigured
           ? suggestion.ticket.identifier
           : dismissed
             ? "Hidden from active queue"
+            : !isBehaviorActionReady()
+              ? "Needs refresh"
             : linearConfigured
               ? "Ready for ticket"
               : "Needs Linear"
@@ -1308,14 +1348,17 @@ function renderBehaviorDetail(suggestion, linearConfigured) {
     return;
   }
 
-  const readyForTicket = linearConfigured && Boolean(state.selectedTeamId);
+  const evidenceReady = isBehaviorActionReady();
+  const readyForTicket = linearConfigured && Boolean(state.selectedTeamId) && evidenceReady;
   const isCreating = state.creatingBehaviorSuggestionId === suggestion.id;
   const dismissed = isDismissedBehaviorSuggestion(suggestion.id);
   const actionLabel = suggestion.ticket?.identifier
     ? suggestion.ticket.identifier
     : isCreating
       ? "Creating..."
-      : readyForTicket
+      : !evidenceReady
+        ? "Refresh evidence first"
+        : readyForTicket
         ? "Create Linear ticket"
         : linearConfigured
           ? "Pick a team first"
@@ -1381,6 +1424,8 @@ function renderBehaviorDetail(suggestion, linearConfigured) {
           ? "Dismissed behavior suggestions stay out of the active queue until you restore them."
           : suggestion.ticket?.url
           ? "Ticket already created."
+          : !evidenceReady
+            ? escapeHtml(state.dashboard?.freshness?.behaviorAnalysis?.message ?? "Refresh behavior analysis before creating an issue.")
           : readyForTicket
             ? "This behavior suggestion is ready to send to Linear."
             : linearConfigured
@@ -1575,6 +1620,7 @@ function renderDashboard() {
 
   syncDismissedSuggestions(dashboard.siteUrl);
   syncDismissedBehaviorSuggestions();
+  syncSelectedWindowFromDashboard(dashboard);
 
   const siteLabel = humanizeSite(dashboard.siteUrl);
   const sourceLabel = dashboard.source === "live" ? "Live Search Console snapshot" : "Demo preview";
@@ -1583,7 +1629,11 @@ function renderDashboard() {
   const queuedRecommendations = sortSuggestions(visibleRecommendations);
   const selectedSuggestion = getSelectedSuggestion(queuedRecommendations);
   const teamLabel = elements.teamSelect.options[elements.teamSelect.selectedIndex]?.textContent;
-  const ticketReady = dashboard.connection?.linear?.configured && Boolean(state.selectedTeamId);
+  const searchFreshness = dashboard.freshness?.searchConsole;
+  const currentWindowDays = normalizeSearchWindowDays(dashboard.searchConsoleWindowDays);
+  const windowSelectionPending = state.selectedSearchWindowDays !== currentWindowDays;
+  const validationWindow = dashboard.validationWindow?.recent;
+  const ticketReady = dashboard.connection?.linear?.configured && Boolean(state.selectedTeamId) && isSearchActionReady(dashboard);
   const behaviorAnalysis = dashboard.behaviorAnalysis ?? {};
   const behaviorStatus = behaviorAnalysis.status ?? "idle";
   const behaviorWindow = behaviorAnalysis.window;
@@ -1593,11 +1643,15 @@ function renderDashboard() {
   ).length;
 
   elements.deskTitle.textContent = siteLabel ? `${siteLabel} SEO desk` : "SEO desk";
-  elements.overviewMeta.textContent = `${sourceLabel} for ${dashboard.siteUrl} • synced ${formatDateTime(dashboard.lastSyncedAt)}`;
+  elements.overviewMeta.textContent = `${sourceLabel} for ${dashboard.siteUrl} • ${currentWindowDays}-day window • synced ${formatDateTime(dashboard.lastSyncedAt)} • ${formatDataThrough(searchFreshness?.dataThrough ?? dashboard.dateWindow?.recent?.endDate)}`;
   elements.focusPrompt.textContent = selectedSuggestion
-    ? ticketReady
+    ? windowSelectionPending
+      ? `Sync Search Console to load the selected ${state.selectedSearchWindowDays}-day window.`
+      : ticketReady
       ? `Start with “${selectedSuggestion.title}” and send it to ${teamLabel} when it looks right.`
-      : `Start with “${selectedSuggestion.title}”. The detail pane keeps the evidence and ticket action together.`
+      : isSearchActionReady(dashboard)
+        ? `Start with “${selectedSuggestion.title}”. The detail pane keeps the evidence and ticket action together.`
+        : searchFreshness?.message ?? `Start with “${selectedSuggestion.title}”. The detail pane keeps the evidence and ticket action together.`
     : "No suggestions surfaced yet. Run a sync after your next content or ranking movement.";
 
   if (dashboard.dateWindow?.recent) {
@@ -1605,7 +1659,11 @@ function renderDashboard() {
   }
 
   elements.queueMeta.textContent = visibleRecommendations.length
-    ? `${visibleRecommendations.length} suggestions in view, with ticketed items tucked to the end.${
+    ? `${visibleRecommendations.length} suggestions in view${
+        validationWindow?.startDate && validationWindow?.endDate
+          ? ` after checking ${validationWindow.startDate} to ${validationWindow.endDate}`
+          : ""
+      }, with ticketed items tucked to the end.${
         dismissedCount ? ` ${dismissedCount} dismissed item${dismissedCount === 1 ? "" : "s"} hidden for now.` : ""
       }`
     : dismissedCount
@@ -1692,12 +1750,19 @@ async function fetchSession() {
 async function syncDashboard() {
   state.syncing = true;
   elements.syncButton.disabled = true;
+  elements.windowSelect.disabled = true;
   elements.syncButton.textContent = "Syncing...";
   renderDashboard();
 
   try {
     const { payload, response } = await requestJson("/api/sync", {
-      method: "POST"
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        windowDays: state.selectedSearchWindowDays
+      })
     });
 
     if (!response.ok) {
@@ -1713,6 +1778,7 @@ async function syncDashboard() {
   } finally {
     state.syncing = false;
     elements.syncButton.disabled = false;
+    elements.windowSelect.disabled = false;
     elements.syncButton.textContent = "Sync Search Console";
     renderDashboard();
   }
@@ -1788,6 +1854,12 @@ elements.behaviorSyncButton.addEventListener("click", () => {
 elements.teamSelect.addEventListener("change", (event) => {
   state.selectedTeamId = event.target.value;
   localStorage.setItem("crawlipop:selected-team", state.selectedTeamId);
+  renderDashboard();
+});
+
+elements.windowSelect.addEventListener("change", (event) => {
+  state.selectedSearchWindowDays = normalizeSearchWindowDays(event.target.value);
+  localStorage.setItem("crawlipop:search-window-days", String(state.selectedSearchWindowDays));
   renderDashboard();
 });
 

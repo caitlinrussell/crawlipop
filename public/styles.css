@@ -305,6 +305,10 @@ a {
   backdrop-filter: blur(12px);
 }
 
+.window-picker select {
+  min-width: 132px;
+}
+
 .team-picker select option {
   background: #1a1545;
   color: var(--ink);
@@ -1703,6 +1707,7 @@ td:nth-child(5) {
   .auth-form,
   .team-picker,
   .team-picker select,
+  .window-picker select,
   .primary-button {
     width: 100%;
   }

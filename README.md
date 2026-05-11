@@ -85,7 +85,7 @@ For Google auth, register these callback URLs in your OAuth client:
 1. Create a Google Cloud service account and download its JSON key.
 2. Add that service account email to the Search Console property with access to the property.
 3. Fill in `GOOGLE_SITE_URL` plus either `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` or `GOOGLE_SERVICE_ACCOUNT_JSON`.
-4. Start the app and click `Sync Search Console`.
+4. Start the app, choose a Search window if you want something other than 28 days, and click `Sync Search Console`.
 
 The server queries two rolling windows, compares them, and generates recommendations from:
 
@@ -93,6 +93,8 @@ The server queries two rolling windows, compares them, and generates recommendat
 - near-page-one queries,
 - pages losing clicks while still ranking well,
 - pages with strong momentum worth expanding.
+
+The dashboard supports 7, 14, 28, 60, and 90 day Search Console windows. SEO suggestions are also checked against the latest 7 days of the selected window so fixes made during a longer window do not keep showing as active work after the recent data has recovered.
 
 ## Linear setup
 
