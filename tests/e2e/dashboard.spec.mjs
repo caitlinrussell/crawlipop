@@ -42,18 +42,21 @@ test("SEO suggestions can be dismissed, hidden, shown, and restored", async ({ p
 test("syncing in demo mode refreshes dashboard data and keeps the UI interactive", async ({ page }) => {
   await page.goto("/");
 
-  await page.getByLabel("Data window").selectOption("14");
   const syncButton = page.getByRole("button", { name: "Sync Search Console" });
-  await Promise.all([page.waitForResponse("**/api/sync"), syncButton.click()]);
-  await expect(syncButton).toBeEnabled({ timeout: 10_000 });
-  await expect(page.getByRole("heading", { name: /example\.com SEO desk/ })).toBeVisible();
-  await expect(page.getByText(/14-day window/)).toBeVisible();
-  await expect(page.getByText(/suggestions in view/)).toBeVisible();
-
   const behaviorButton = page.getByRole("button", { name: "Analyze behavior" });
-  await Promise.all([page.waitForResponse("**/api/behavior-analysis/sync"), behaviorButton.click()]);
+  const syncResponse = page.waitForResponse("**/api/sync");
+  const behaviorResponse = page.waitForResponse("**/api/behavior-analysis/sync");
+
+  await page.getByLabel("Data window").selectOption("14");
+  await syncResponse;
+  await behaviorResponse;
+
+  await expect(syncButton).toBeEnabled({ timeout: 10_000 });
   await expect(behaviorButton).toBeEnabled({ timeout: 10_000 });
-  await expect(page.getByText(/Test Product behavior from .*14-day window/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /example\.com SEO desk/ })).toBeVisible();
+  await expect(page.locator("#overviewMeta")).toContainText("14-day window");
+  await expect(page.getByText(/suggestions in view/)).toBeVisible();
+  await expect(page.locator("#behaviorMeta")).toContainText("14-day window");
 });
 
 test("public demo API endpoints return useful unauthenticated state", async ({ request }) => {

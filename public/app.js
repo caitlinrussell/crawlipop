@@ -15,6 +15,7 @@ const state = {
   loadingDashboard: true,
   syncing: false,
   analyzingBehavior: false,
+  applyingDataWindow: false,
   behaviorPollCount: 0,
   creatingSuggestionId: null,
   creatingBehaviorSuggestionId: null,
@@ -1647,8 +1648,10 @@ function renderDashboard() {
   elements.deskTitle.textContent = siteLabel ? `${siteLabel} SEO desk` : "SEO desk";
   elements.overviewMeta.textContent = `${sourceLabel} for ${dashboard.siteUrl} • ${currentWindowDays}-day window • synced ${formatDateTime(dashboard.lastSyncedAt)} • ${formatDataThrough(searchFreshness?.dataThrough ?? dashboard.dateWindow?.recent?.endDate)}`;
   elements.focusPrompt.textContent = selectedSuggestion
-    ? windowSelectionPending
-      ? `Sync Search Console or analyze behavior to load the selected ${state.selectedSearchWindowDays}-day window.`
+    ? state.applyingDataWindow
+      ? `Loading the selected ${state.selectedSearchWindowDays}-day window.`
+      : windowSelectionPending
+        ? `Loading the selected ${state.selectedSearchWindowDays}-day window.`
       : ticketReady
       ? `Start with “${selectedSuggestion.title}” and send it to ${teamLabel} when it looks right.`
       : isSearchActionReady(dashboard)
@@ -1788,6 +1791,26 @@ async function syncDashboard() {
   }
 }
 
+async function applySelectedDataWindow() {
+  if (state.applyingDataWindow || state.syncing || state.analyzingBehavior) {
+    return;
+  }
+
+  state.applyingDataWindow = true;
+  renderDashboard();
+
+  try {
+    await syncDashboard();
+
+    if (state.dashboard?.behaviorAnalysis?.configured) {
+      await syncBehaviorAnalysis();
+    }
+  } finally {
+    state.applyingDataWindow = false;
+    renderDashboard();
+  }
+}
+
 function scheduleBehaviorPoll() {
   window.clearTimeout(behaviorPollTimer);
 
@@ -1872,7 +1895,7 @@ elements.teamSelect.addEventListener("change", (event) => {
 elements.windowSelect.addEventListener("change", (event) => {
   state.selectedSearchWindowDays = normalizeSearchWindowDays(event.target.value);
   localStorage.setItem("crawlipop:search-window-days", String(state.selectedSearchWindowDays));
-  renderDashboard();
+  void applySelectedDataWindow();
 });
 
 renderLoadingDashboard();
