@@ -1637,6 +1637,8 @@ function renderDashboard() {
   const behaviorAnalysis = dashboard.behaviorAnalysis ?? {};
   const behaviorStatus = behaviorAnalysis.status ?? "idle";
   const behaviorWindow = behaviorAnalysis.window;
+  const behaviorWindowDays = normalizeSearchWindowDays(behaviorWindow?.lookbackDays ?? currentWindowDays);
+  const behaviorWindowPending = state.selectedSearchWindowDays !== behaviorWindowDays;
   const visibleBehaviorSuggestions = getVisibleBehaviorSuggestions(behaviorAnalysis.suggestions ?? []);
   const dismissedBehaviorCount = (behaviorAnalysis.suggestions ?? []).filter((entry) =>
     isDismissedBehaviorSuggestion(entry.id)
@@ -1646,7 +1648,7 @@ function renderDashboard() {
   elements.overviewMeta.textContent = `${sourceLabel} for ${dashboard.siteUrl} • ${currentWindowDays}-day window • synced ${formatDateTime(dashboard.lastSyncedAt)} • ${formatDataThrough(searchFreshness?.dataThrough ?? dashboard.dateWindow?.recent?.endDate)}`;
   elements.focusPrompt.textContent = selectedSuggestion
     ? windowSelectionPending
-      ? `Sync Search Console to load the selected ${state.selectedSearchWindowDays}-day window.`
+      ? `Sync Search Console or analyze behavior to load the selected ${state.selectedSearchWindowDays}-day window.`
       : ticketReady
       ? `Start with “${selectedSuggestion.title}” and send it to ${teamLabel} when it looks right.`
       : isSearchActionReady(dashboard)
@@ -1672,7 +1674,9 @@ function renderDashboard() {
 
   elements.behaviorMeta.textContent = behaviorAnalysis.configured
     ? behaviorWindow?.start && behaviorWindow?.end
-      ? `${productName(dashboard)} behavior from ${formatShortDate(behaviorWindow.start)} to ${formatShortDate(behaviorWindow.end)} • analyzed ${formatDateTime(behaviorAnalysis.lastAnalyzedAt)}`
+      ? `${productName(dashboard)} behavior from ${formatShortDate(behaviorWindow.start)} to ${formatShortDate(behaviorWindow.end)} • ${behaviorWindowDays}-day window • analyzed ${formatDateTime(behaviorAnalysis.lastAnalyzedAt)}${
+          behaviorWindowPending ? ` • selected ${state.selectedSearchWindowDays} days` : ""
+        }`
       : behaviorStatus === "running"
         ? `Analyzing ${productName(dashboard)} behavior from PostHog.`
         : `Ready to analyze ${productName(dashboard)} behavior.`
@@ -1818,12 +1822,19 @@ function scheduleBehaviorPoll() {
 async function syncBehaviorAnalysis() {
   state.analyzingBehavior = true;
   elements.behaviorSyncButton.disabled = true;
+  elements.windowSelect.disabled = true;
   elements.behaviorSyncButton.textContent = "Analyzing...";
   renderDashboard();
 
   try {
     const { payload, response } = await requestJson("/api/behavior-analysis/sync", {
-      method: "POST"
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        windowDays: state.selectedSearchWindowDays
+      })
     });
 
     state.dashboard = payload.dashboard ?? {
@@ -1839,6 +1850,7 @@ async function syncBehaviorAnalysis() {
     window.alert(error.message);
   } finally {
     state.analyzingBehavior = false;
+    elements.windowSelect.disabled = false;
     renderDashboard();
   }
 }

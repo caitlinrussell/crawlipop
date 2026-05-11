@@ -37,6 +37,7 @@ const store = createStore(path.resolve(process.cwd(), config.dataDir, "dashboard
 let syncInFlight = null;
 let syncInFlightWindowDays = null;
 let behaviorAnalysisInFlight = null;
+let behaviorAnalysisInFlightWindowDays = null;
 
 const AUTH_ERROR_MESSAGES = {
   callback: "Google sign-in did not complete. Try again.",
@@ -107,7 +108,7 @@ function createFreshnessState(baseState, behaviorAnalysis) {
     behaviorAgeHours === null ||
     behaviorAgeHours > Math.max(1, config.posthogAnalysisMaxAgeHours) ||
     behaviorDataLagDays === null ||
-    behaviorDataLagDays > Math.max(1, config.posthogLookbackDays);
+    behaviorDataLagDays > Math.max(1, behaviorAnalysis.window?.lookbackDays ?? config.posthogLookbackDays);
 
   return {
     searchConsole: {
@@ -412,19 +413,43 @@ async function syncDashboard({ windowDays } = {}) {
   return syncInFlight;
 }
 
-async function syncBehaviorAnalysis({ force = false } = {}) {
+async function syncBehaviorAnalysis({ force = false, windowDays } = {}) {
+  const currentState = store.getState();
+  const requestedWindowDays = normalizeSearchConsoleWindowDays(
+    windowDays ??
+      currentState.behaviorAnalysis?.window?.lookbackDays ??
+      currentState.searchConsoleWindowDays ??
+      config.posthogLookbackDays
+  );
+
   if (behaviorAnalysisInFlight) {
-    return behaviorAnalysisInFlight;
+    if (behaviorAnalysisInFlightWindowDays === requestedWindowDays) {
+      return behaviorAnalysisInFlight;
+    }
+
+    await behaviorAnalysisInFlight.catch(() => {});
+    return syncBehaviorAnalysis({ force, windowDays: requestedWindowDays });
   }
 
+  behaviorAnalysisInFlightWindowDays = requestedWindowDays;
   behaviorAnalysisInFlight = (async () => {
     config = await loadConfig();
-    const currentState = store.getState();
-    const currentBehavior = createBehaviorAnalysisState(currentState.behaviorAnalysis);
+    const latestCurrentState = store.getState();
+    const currentBehavior = createBehaviorAnalysisState(latestCurrentState.behaviorAnalysis);
 
     if (!hasPostHogConfig(config)) {
       if (currentBehavior.demo) {
-        return currentBehavior;
+        const demoBehaviorAnalysis = createDemoDashboard(config.siteUrl, requestedWindowDays).behaviorAnalysis;
+        const nextState = await store.merge((state) =>
+          createDashboardState({
+            ...state,
+            behaviorAnalysis: {
+              ...demoBehaviorAnalysis,
+              ticketsBySuggestion: currentBehavior.ticketsBySuggestion ?? {}
+            }
+          })
+        );
+        return nextState.behaviorAnalysis;
       }
 
       const nextState = await store.merge((state) =>
@@ -466,7 +491,7 @@ async function syncBehaviorAnalysis({ force = false } = {}) {
         host: config.posthogHost,
         projectId: config.posthogProjectId,
         personalApiKey: config.posthogPersonalApiKey,
-        lookbackDays: config.posthogLookbackDays,
+        lookbackDays: requestedWindowDays,
         excludedDistinctIds: config.posthogExcludedDistinctIds,
         excludedEmails: config.posthogExcludedEmails
       });
@@ -520,6 +545,7 @@ async function syncBehaviorAnalysis({ force = false } = {}) {
       });
     } finally {
       behaviorAnalysisInFlight = null;
+      behaviorAnalysisInFlightWindowDays = null;
     }
   })();
 
@@ -701,9 +727,12 @@ app.post("/api/sync", async (request, response) => {
   }
 });
 
-app.post("/api/behavior-analysis/sync", async (_request, response) => {
+app.post("/api/behavior-analysis/sync", async (request, response) => {
   try {
-    const behaviorAnalysis = await syncBehaviorAnalysis({ force: true });
+    const behaviorAnalysis = await syncBehaviorAnalysis({
+      force: true,
+      windowDays: request.body?.windowDays
+    });
     response.json({
       behaviorAnalysis,
       dashboard: store.getState()

@@ -85,7 +85,7 @@ For Google auth, register these callback URLs in your OAuth client:
 1. Create a Google Cloud service account and download its JSON key.
 2. Add that service account email to the Search Console property with access to the property.
 3. Fill in `GOOGLE_SITE_URL` plus either `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` or `GOOGLE_SERVICE_ACCOUNT_JSON`.
-4. Start the app, choose a Search window if you want something other than 28 days, and click `Sync Search Console`.
+4. Start the app, choose a Data window if you want something other than 28 days, and click `Sync Search Console`.
 
 The server queries two rolling windows, compares them, and generates recommendations from:
 
@@ -94,7 +94,7 @@ The server queries two rolling windows, compares them, and generates recommendat
 - pages losing clicks while still ranking well,
 - pages with strong momentum worth expanding.
 
-The dashboard supports 7, 14, 28, 60, and 90 day Search Console windows. SEO suggestions are also checked against the latest 7 days of the selected window so fixes made during a longer window do not keep showing as active work after the recent data has recovered.
+The dashboard supports 7, 14, 28, 60, and 90 day data windows. Search Console syncs and PostHog behavior analysis both use the selected window. SEO suggestions are also checked against the latest 7 days of the selected window so fixes made during a longer window do not keep showing as active work after the recent data has recovered.
 
 ## Linear setup
 
@@ -110,7 +110,7 @@ When you click a suggestion, Crawlipop creates a Linear issue with a prefilled t
 2. Set `POSTHOG_HOST`, `POSTHOG_PROJECT_ID`, and `POSTHOG_PERSONAL_API_KEY`.
 3. Add your own PostHog distinct IDs or email addresses to `POSTHOG_EXCLUDED_DISTINCT_IDS` / `POSTHOG_EXCLUDED_EMAILS` so Crawlipop filters out internal behavior.
 
-When the dashboard opens, Crawlipop silently refreshes the product behavior analysis if the cached result is stale. The default window is the last 30 days, and the default cache age is 24 hours.
+When the dashboard opens, Crawlipop silently refreshes the product behavior analysis if the cached result is stale. Manual behavior analysis uses the selected Data window, and the default cache age is 24 hours.
 
 The behavior queue is tuned for this generic funnel:
 
